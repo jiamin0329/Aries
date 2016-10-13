@@ -1,34 +1,38 @@
+/*
+ *================================================================================
+ *
+ *    Copyright (c) 2016 Vortex Co.,Ltd.
+ *    Unpublished - All rights reserved
+ *
+ *================================================================================
+ *    File description:
+ *    Main entrance for ARIES suite
+ *
+ *================================================================================
+ *    Date            Name                    Description of Change
+ *    13-Oct-2016     Jiamin Xu               Creation
+ *================================================================================
+ */
 
-
-
-
-
-
+/* Aries includes */
 #include "const_def.h"
-
-#include <string>
-
 #include "IProcData.hpp"
 #include "ProcData.hpp"
-
 #include "AriesMPI.hpp"
 #include "AriesManager.hpp"
 #include "Logger.hpp"
+/* C++ includes */
+#include <string>
 
 
 int main(int argc, char *argv[])
 {
-    ARIES::AriesMPI::Init(&argc, &argv); 
-    ARIES::AriesManager::Initialize();
+    //ARIES::AriesMPI::Init(&argc, &argv); 
+    ARIES::AriesManager::Initialize(argc, argv);
     ARIES::AriesManager::Startup();
     
     ARIES::Logger::GetInstance()->Startup(true,true,"./hello.log");
 
-
-
-
-    
-    
     unsigned short nZone, nDim;
     bool isFsi;
     char configFileName[MAX_STRING_SIZE];
@@ -98,7 +102,6 @@ int main(int argc, char *argv[])
     ARIES::Logger::GetInstance()->Shutdown();
     ARIES::AriesManager::Shutdown();
     ARIES::AriesManager::Finalize();
-    ARIES::AriesMPI::Finalize(); 
-  
+    
     return 0;
 }

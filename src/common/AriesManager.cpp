@@ -11,28 +11,28 @@
  *================================================================================
  *    Date            Name                    Description of Change
  *    07-Oct-2016     Jiamin Xu               Creation
+ *    13-Oct-2016     Jiamin Xu               Add AriesMPI Initialize/Finalize
  *================================================================================
  */
 
 #include "AriesManager.hpp"
 
-// Aries head files
+/* Aries includes */
+#include "AriesMPI.hpp"
 #include "StartupShutdownManager.hpp"
 #include "Utilities.hpp"
-//*
+/* C++ includes */
 
-// c++ head files
-
-//*
 
 namespace ARIES
 {
     bool AriesManager::d_initialized = false;
     bool AriesManager::d_started = false;
 
-    void AriesManager::Initialize()
+    void AriesManager::Initialize(int argc, char *argv[])
     {
         ARIES_ASSERT(!d_initialized);
+        AriesMPI::Init(&argc, &argv);
         StartupShutdownManager::Initialize();
         d_initialized = true;
     }
@@ -57,6 +57,7 @@ namespace ARIES
     {
         ARIES_ASSERT(d_initialized);
         StartupShutdownManager::Finalize();
+        ARIES::AriesMPI::Finalize(); 
         d_initialized = false;
     }
     

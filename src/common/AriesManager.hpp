@@ -13,114 +13,85 @@
  *    07-Oct-2016     Jiamin Xu               Creation
  *================================================================================
  */
-
 #ifndef ARIES_ARIESMANAGER_HPP
 #define ARIES_ARIESMANAGER_HPP
 
 namespace ARIES
 {
-    /*
-     * Utility for managing startup and shutdown of Aries objects
-     * and for managing the maximum number of patch data components allowed.
+    /*!
+     *  @brief Utility for managing startup and shutdown of Aries objects and
+     *         for managing the maximum number of patch data components allowed.
      *
-     * The startup/shutdown mechanism in AriesManager is used to manage the
-     * allocation and deallocation of certain memory, particularly static data
-     * that must exist during the full extent of a run or for the full extent
-     * of a single problem within a run.  The specific data that is controlled
-     * by this mechanism is managed using the StartupShutdownManager.
+     *  The startup/shutdown mechanism in AriesManager is used to manage the
+     *  allocation and deallocation of certain memory, particularly static data
+     *  that must exist during the full extent of a run or for the full extent
+     *  of a single problem within a run. The specific data that is controlled
+     *  by this mechanism is managed using the StartupShutdownManager.
      *
-     * The four steps of the startup/shutdown mechanism are:
+     *  The startup and shutdown functions may be called multiple times within a
+     *  run, in order to allow for the execution of more than one problem within one
+     *  program. Initialize and finalize must be called exactly once in a single
+     *  run.
      *
-     * <ul>
-     * <li> initialize -- called at the start of a program after MPI is
-     *      initialized but befor any other Aries objects are used.
-     * <li> startup -- called to begin a problem-specific segment of the code.
-     * <li> shutdown -- called at the end of a problem-specific segment of the
-     *                  code.  Shuts down and deallocates everything that was
-     *                  started and allocated by startup.
-     * <li> finalize -- called at the end of a program right before MPI is
-     *                  finalized.
-     * </ul>
-     *
-     * The startup and shutdown functions may be called multiple times within a
-     * run, in order to allow for the execution of more than one problem within one
-     * program. Initialize and finalize must be called exactly once in a single
-     * run.
-     *
-     * @see StartupShutdownManager
-     * @see ParallelIO
+     *  @see AriesMPI
+     *  @see StartupShutdownManager
      */
     class AriesManager
     {
     public:
         /*!
-         * @brief Initial setup of the Aries package.
+         *  @brief Initial setup of the Aries package.
          *
-         * This function should be invoked ONLY ONCE at the start of a process
-         * to initialize Aries and AFTER MPI is initialized (if used) by a
-         * call to one of the AriesMPI init routines.
+         *  This function should be invoked ONLY ONCE at the start of a process
+         *  to initialize Aries.
          *
-         * This function initializes Aries I/O, as well as data for any classes
-         * that implement the initialize callback interface through StartupShutdownManager.
-         *
-         * @pre !s_initialized
+         *  This function initializes AriesMPI, as well as data for any classes that
+         *  implement the initialize callback interface through StartupShutdownManager.
          */
-        static void Initialize();
+        static void Initialize(int argc, char *argv[]);
 
         /*!
-         * @brief Startup of the Aries package.
+         *  @brief Startup of the Aries package.
          *
-         * This function invokes startup for any classes that implement the
-         * startup callback interface through StartupShutdownManager.
-         * This function may be invoked more than once in a process 
+         *  This function invokes startup for any classes that implement the
+         *  startup callback interface through StartupShutdownManager.
+         *  This function may be invoked more than once in a process. 
          */
         static void Startup();
 
         /*!
-         * @brief Shutdown the Aries package.
+         *  @brief Shutdown the Aries package.
          *
-         * This function invokes shutdown for any classes that implement the
-         * startup callback interface through StartupShutdownManager.
-         * This function may be invoked more than once in an process if
-         * solving multiple Aries problems.
+         *  This function invokes shutdown for any classes that implement the
+         *  startup callback interface through StartupShutdownManager.
+         *  This function may be invoked more than once in an process if
+         *  solving multiple Aries problems.
          */
         static void Shutdown();
 
         /*!
-         * @brief Final cleanup of the Aries package.
+         *  @brief Final cleanup of the Aries package.
          *
-         * This function should be invoked ONLY ONCE at the end of a process
-         * to complete the cleanup of Aries memory allocations and
-         * any other cleanup tasks.  Aries I/O will be finalized, as well as data for any classes that implement
-         * the finalize callback interface through StartupShutdownManager.
-         *
-         * After this function is called, the only thing that should occur before
-         * exiting the program is a call to AriesMPI::Finalize().
-         *
-         * This function should be invoked only once.
+         *  This function should be invoked ONLY ONCE at the end of a process
+         *  to complete the cleanup of Aries memory allocations and
+         *  any other cleanup tasks. Data for any classes that implement
+         *  the finalize callback interface will be finalized through StartupShutdownManager.
          */
         static void Finalize();
-
-        static bool IsInitialized() { return d_initialized; }
-        static bool IsStarted() { return d_started; }
+ 
+        static bool IsInitialized() { return d_initialized; }      /**< @brief Acessor of d_initialized. */
+        static bool IsStarted() { return d_started; }              /**< @brief Acessor of d_started. */     
 
     private:
-        // Unimplemented default constructor.
-        AriesManager();
-
-        // Unimplemented copy constructor.
-        AriesManager(const AriesManager& other);
-
-        // Unimplemented assignment operator.
-        AriesManager& operator = (const AriesManager& rhs);
-
-        static bool d_initialized;  // Flag indicating AriesManager has been initialized.
-        static bool d_started;      // Flag indicating startup has occured.
+        AriesManager();                                            /**< @brief Unimplemented default constructor. */
+        AriesManager(const AriesManager& other);                   /**< @brief Unimplemented copy constructor. */
+        AriesManager& operator = (const AriesManager& rhs);        /**< @brief Unimplemented assignment operator. */
+        
+        static bool d_initialized;                                 /**< @brief Flag indicating AriesManager has been initialized. */
+        static bool d_started;                                     /**< @brief Flag indicating Startup has occured. */
+        
     }; // end class AriesManager
 } // end namespace ARIES
 
 #endif
-
-
-
 
