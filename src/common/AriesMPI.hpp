@@ -13,25 +13,23 @@
  *    06-Oct-2016     Jiamin Xu               Creation
  *================================================================================
  */
-
 #ifndef ARIES_ARIESMPI_HPP
 #define ARIES_ARIESMPI_HPP
 
+/* Aries includes */
 #ifdef ARIES_HAVE_MPI
 #include "mpi.h"
 #else
-
 /*!
- * @brief Enumeration to define MPI constants when compiling without MPI.
+ *  @brief Enumeration to define MPI constants when compiling without MPI.
  *
- * These are defined in the global namespace because that's where MPI
- * defines them.  It does not matter what values these take because
- * they are not used.  (They are just place holders to let code
- * compile without MPI without requiring excessive preprocessor guards
- * in the code.)
- *
- * This is not a complete set.  Developers should add as needed to extend
- * Aries_MPI's functionality.
+ *  These are defined in the global namespace because that's where MPI
+ *  defines them. It does not matter what values these take because
+ *  they are not used.  (They are just place holders to let code
+ *  compile without MPI without requiring excessive preprocessor guards
+ *  in the code.)
+ *  This is not a complete set.  Developers should add as needed to extend
+ *  AriesMPI's functionality.
  */
 enum
 {
@@ -68,10 +66,15 @@ enum
 };
 #endif
 
+/*
+ *================================================================================
+ *    Class namespaces
+ *================================================================================
+ */
 namespace ARIES
 {
     /*!
-     * @brief Provides C++ wrapper around MPI routines.
+     *  @brief Provides C++ wrapper around MPI routines.
      *
      * Aries_MPI provides a single point of access in Aries for using MPI
      * function calls and for the run-time decision whether to use MPI.
@@ -644,7 +647,9 @@ namespace ARIES
          * @brief Primary AriesMPI object.
          */
         static AriesMPI d_ariesWorld;
+        
     }; // end class AriesMPI
 } // end namespace ARIES
 
 #endif
+

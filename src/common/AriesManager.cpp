@@ -21,9 +21,12 @@
 #include "AriesMPI.hpp"
 #include "StartupShutdownManager.hpp"
 #include "Utilities.hpp"
-/* C++ includes */
 
-
+/*
+ *================================================================================
+ *    Class namespaces
+ *================================================================================
+ */
 namespace ARIES
 {
     bool AriesManager::d_initialized = false;
