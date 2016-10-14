@@ -16,8 +16,10 @@
 
 #include "AriesMPI.hpp"
 
+/* Aries includes */
 #include "Logger.hpp"
 #include "Utilities.hpp"
+/* C++ includes */
 #include <stdlib.h>
 #include <string.h>
 #include <string>
@@ -27,16 +29,21 @@ using namespace std;
 
 #ifdef __INSURE__
 /*
- * These are defined in mpich mpi.h and break the insure compile.
- * This may impact Globus in some way, at least from the comments
- * in the mpi.h header file.  Why mpich externs something that is
- * not defined in the mpich is confusing and probably just broken.
+ *  These are defined in mpich mpi.h and break the insure compile.
+ *  This may impact Globus in some way, at least from the comments
+ *  in the mpi.h header file.  Why mpich externs something that is
+ *  not defined in the mpich is confusing and probably just broken.
  */
 int MPICHX_TOPOLOGY_DEPTHS;
 int MPICHX_TOPOLOGY_COLORS;
 int MPICHX_PARALLELSOCKETS_PARAMETERS;
 #endif
 
+/*
+ *================================================================================
+ *    Class namespaces
+ *================================================================================
+ */
 namespace ARIES
 {
     bool AriesMPI::d_mpiIsInitialized = false;
@@ -47,9 +54,6 @@ namespace ARIES
     bool AriesMPI::d_callAbortInParallelInsteadOfMpiAbort = false;
     int AriesMPI::d_invalidRank = -1;
     
-    /*
-     * Constructor.
-     */
     AriesMPI::AriesMPI(const Comm& comm):
             d_comm(comm),
             d_rank(-1),
@@ -69,161 +73,83 @@ namespace ARIES
 #endif
         }
     }
-
-    /*
-     * Copy constructor.
-     */
+    
     AriesMPI::AriesMPI(const AriesMPI& other):
             d_comm(other.d_comm),
             d_rank(other.d_rank),
             d_size(other.d_size)
     {
     }
-
-    /*
-     * Abort the program.
-     */
-    void AriesMPI::Abort()
-    {
-#ifdef ARIES_HAVE_MPI
-        const AriesMPI& mpi(AriesMPI::GetAriesWorld());
-        if (mpi.getSize() > 1)
-        {
-            if (d_callAbortInParallelInsteadOfMpiAbort)
-            {
-                ::abort();
-            }
-            else
-            {
-                MPI_Abort(mpi.getCommunicator(), -1);
-            }
-        }
-        else
-        {
-            if (d_callAbortInSerialInsteadOfExit)
-            {
-                ::abort();
-            }
-            else
-            {
-                exit(-1);
-            }
-        }
-#else
-        if (d_callAbortInSerialInsteadOfExit)
-        {
-            ::abort();
-        }
-        else
-        {
-            exit(-1);
-        }
-#endif
-    }
-
-    /*
-     * Wrapper for MPI_Init()
-     */
-    void AriesMPI::Init(int* argc, char** argv[])
-    {
-#ifdef ARIES_HAVE_MPI
-        MPI_Init(argc, argv);
-        d_mpiIsInitialized = true;
-        d_weStartedMpi = true;
-
-        Comm dup_comm;
-        MPI_Comm_dup(MPI_COMM_WORLD, &dup_comm);
-        d_ariesWorld.setCommunicator(dup_comm);
-#else
-        NULL_USE(argc);
-        NULL_USE(argv);
-        d_ariesWorld.d_comm = MPI_COMM_WORLD;
-        d_ariesWorld.d_size = 1;
-        d_ariesWorld.d_rank = 0;
-#endif
-
-        if (getenv("ARIES_ABORT_ON_ERROR"))
-        {
-            AriesMPI::SetCallAbortInSerialInsteadOfExit(true);
-            AriesMPI::SetCallAbortInParallelInsteadOfMPIAbort(true);
-        }
-    }
     
-    /*
-     * Wrapper for MPI_Init().
-     */
-    void AriesMPI::Init(Comm comm)
+    void AriesMPI::SetCommunicator(const Comm& comm)
     {
-        if (comm == MPI_COMM_NULL)
-        {
-            std::cerr << "AriesMPI::Init: invalid initializing Communicator."
-                      << std::endl;
-        }
-#ifdef ARIES_HAVE_MPI
-        d_mpiIsInitialized = true;
-        d_weStartedMpi = false;
-
-        Comm dup_comm;
-        MPI_Comm_dup(comm, &dup_comm);
-        d_ariesWorld.setCommunicator(dup_comm);
-#endif
-        if (getenv("ARIES_ABORT_ON_ERROR"))
-        {
-            AriesMPI::SetCallAbortInSerialInsteadOfExit(true);
-            AriesMPI::SetCallAbortInParallelInsteadOfMPIAbort(true);
-        }
-    }
-    
-    /*
-     * Initialize AriesMPI with MPI disabled.
-     */
-    void AriesMPI::InitMPIDisabled()
-    {
-        d_mpiIsInitialized = false;
-        d_weStartedMpi = false;
-
-        d_ariesWorld.d_comm = MPI_COMM_WORLD;
-        d_ariesWorld.d_size = 1;
-        d_ariesWorld.d_rank = 0;
-
-        if (getenv("ARIES_ABORT_ON_ERROR"))
-        {
-            AriesMPI::SetCallAbortInSerialInsteadOfExit(true);
-            AriesMPI::SetCallAbortInParallelInsteadOfMPIAbort(true);
-        }
-    }
-
-    /*
-     * Wrapper for MPI_Finalize().
-     */
-    void AriesMPI::Finalize()
-    {
+        d_comm = comm;
+        d_rank = 0;
+        d_size = 1;
 #ifdef ARIES_HAVE_MPI
         if (d_mpiIsInitialized)
         {
-            MPI_Comm_free(&d_ariesWorld.d_comm);
-        }
-        else
-        {
-            d_ariesWorld.d_comm = MPI_COMM_NULL;
-        }
-
-        if (d_weStartedMpi)
-        {
-            MPI_Finalize();
+            if (d_comm != MPI_COMM_NULL)
+            {
+                MPI_Comm_rank(d_comm, &d_rank);
+                MPI_Comm_size(d_comm, &d_size);
+            }
         }
 #endif
     }
 
-    /*
-     * Methods named like MPI's native interfaces (without the MPI_ prefix)
-     * are wrappers for the native interfaces.  The AriesMPI versions
-     * introduce a flag to determine whether MPI is really used at run time.
-     * When the run-time flag is on, these wrappers are identical to the MPI
-     * versions.  When the flag is off, most of these methods are no-ops
-     * (which is not necessarily the same as calling the MPI functions with
-     * only 1 process in the communicator).
-     */
+    void AriesMPI::DupCommunicator(const AriesMPI& r)
+    {
+#ifdef ARIES_HAVE_MPI
+        int rval = r.Comm_dup(&d_comm);
+        if (rval != MPI_SUCCESS)
+        {
+            ARIES_ERROR("AriesMPI::dupCommunicator: Error duplicating\n" << "communicator.");
+        }
+        MPI_Comm_rank(d_comm, &d_rank);
+        MPI_Comm_size(d_comm, &d_size);
+        ARIES_ASSERT(d_rank == r.d_rank);
+        ARIES_ASSERT(d_size == r.d_size);
+#else
+        d_comm = r.d_comm;
+        d_rank = r.d_rank;
+        d_size = r.d_size;
+#endif
+    }
+
+    void AriesMPI::FreeCommunicator()
+    {
+#ifdef ARIES_HAVE_MPI
+        if (d_comm != MPI_COMM_NULL)
+        {
+            ARIES_ASSERT(AriesMPI::usingMPI());
+            Comm_free(&d_comm);
+            // d_comm is now set to MPI_COMM_NULL;
+        }
+#else
+        d_comm = MPI_COMM_NULL;
+#endif
+        d_rank = 0;
+        d_size = 1;
+    }
+    
+    int AriesMPI::CompareCommunicator(const AriesMPI& r) const
+    {
+#ifdef ARIES_HAVE_MPI
+        int compare_result;
+        int mpi_err = Comm_compare(d_comm, r.d_comm, &compare_result);
+        if (mpi_err != MPI_SUCCESS)
+        {
+            ARIES_ERROR("AriesMPI::compareCommunicator: Error comparing two communicators.");
+        }
+        return compare_result;
+#else
+        NULL_USE(r);
+        return d_comm == r.d_comm ? MPI_IDENT : MPI_CONGRUENT;
+#endif
+    }
+
+    // Static MPI wrappers matching MPI interfaces.
     int AriesMPI::Comm_rank(Comm comm, int* rank)
     {
 #ifndef ARIES_HAVE_MPI
@@ -477,24 +403,16 @@ namespace ARIES
 #endif
         return rval;
     }
-
-    /*
-     * If MPI is enabled, use MPI_Wtime.
-     * Else if POSIX time is available, use POSIX time.
-     * Else, return 0.
-     */
+    
     double AriesMPI::Wtime()
     {
         double rval = 0.0;
         if (!d_mpiIsInitialized)
         {
-#ifdef HAVE_SYS_TIMES_H
-            // Without MPI, use POSIX time.
             struct tms tmp_tms;
             clock_t clock_ticks_since_reference = times(&tmp_tms);
             const double clock_ticks_per_second = double(sysconf(_SC_CLK_TCK));
             rval = double(clock_ticks_since_reference) / clock_ticks_per_second;
-#endif
         }
 #ifdef ARIES_HAVE_MPI
         else
@@ -504,10 +422,9 @@ namespace ARIES
 #endif
         return rval;
     }
-    
-    /*
-     * MPI wrappers with the communicator removed from the argument list.
-     */
+    //* Static MPI wrappers matching MPI interfaces.
+
+    // MPI wrappers matching MPI interfaces.
     int AriesMPI::Allgather(void* sendbuf, int sendcount, Datatype sendtype, void* recvbuf, int recvcount, Datatype recvtype) const
     {
 #ifndef ARIES_HAVE_MPI
@@ -993,10 +910,6 @@ namespace ARIES
      * (which is not necessarily the same as calling the MPI functions with
      * only 1 process in the communicator).
      */
-    
-    /*
-     * Specialized Allreduce for integers.
-     */
     int AriesMPI::AllReduce(int* x, int count, Op op, int* ranks_of_extrema) const
     {
 #ifndef ARIES_HAVE_MPI
@@ -1063,9 +976,6 @@ namespace ARIES
         return rval;
     }
 
-    /*
-     * Specialized Allreduce for doubles.
-     */
     int AriesMPI::AllReduce(double* x, int count, Op op, int* ranks_of_extrema) const
     {
 #ifndef ARIES_HAVE_MPI
@@ -1133,9 +1043,6 @@ namespace ARIES
         return rval;
     }
     
-    /*
-     * Specialized Allreduce for floats.
-     */
     int AriesMPI::AllReduce( float* x, int count, Op op, int* ranks_of_extrema) const
     {
 #ifndef ARIES_HAVE_MPI
@@ -1203,16 +1110,6 @@ namespace ARIES
         return rval;
     }
 
-    /*
-     * Parallel prefix sum for ints.
-     *
-     * This method implements the parallel prefix sum algorithm.
-     * The distance loop is expected to execute (ln d_size) times,
-     * doing up to 1 send and 1 receive each time.
-     *
-     * Note: I'm not sure we have to use all non-blocking calls to get
-     * good performance, but it probably can't hurt.  --BTNG
-     */
     int AriesMPI::ParallelPrefixSum(int* x, int count, int tag) const
     {
 #ifndef ARIES_HAVE_MPI
@@ -1279,19 +1176,6 @@ namespace ARIES
         return MPI_SUCCESS;
     }
 
-    /*
-     * Check whether there is a receivable message, for use in guarding
-     * against errant messages (message from an unrelated communication)
-     * that may be mistakenly received.  This check is imperfect; it can
-     * detect messages that have arrived but it can't detect messages that
-     * has not arrived.
-     *
-     * The barriers prevent processes from starting or finishing the check
-     * too early.  Early start may miss recently sent errant messages from
-     * slower processes.  Early finishes can allow the process to get ahead
-     * and send a valid message that may be mistaken as an errant message
-     * by the receiver doing the Iprobe.
-     */
     bool AriesMPI::HasReceivableMessage(Status* status, int source, int tag) const
     {
         int flag = false;
@@ -1308,75 +1192,128 @@ namespace ARIES
         }
         return flag == true;
     }
+    //* MPI wrappers matching MPI interfaces.
     
-    void AriesMPI::DupCommunicator(const AriesMPI& r)
+    void AriesMPI::Abort()
     {
 #ifdef ARIES_HAVE_MPI
-        int rval = r.Comm_dup(&d_comm);
-        if (rval != MPI_SUCCESS)
+        const AriesMPI& mpi(AriesMPI::GetAriesWorld());
+        if (mpi.getSize() > 1)
         {
-            ARIES_ERROR("AriesMPI::dupCommunicator: Error duplicating\n" << "communicator.");
+            if (d_callAbortInParallelInsteadOfMpiAbort)
+            {
+                ::abort();
+            }
+            else
+            {
+                MPI_Abort(mpi.getCommunicator(), -1);
+            }
         }
-        MPI_Comm_rank(d_comm, &d_rank);
-        MPI_Comm_size(d_comm, &d_size);
-        ARIES_ASSERT(d_rank == r.d_rank);
-        ARIES_ASSERT(d_size == r.d_size);
+        else
+        {
+            if (d_callAbortInSerialInsteadOfExit)
+            {
+                ::abort();
+            }
+            else
+            {
+                exit(-1);
+            }
+        }
 #else
-        d_comm = r.d_comm;
-        d_rank = r.d_rank;
-        d_size = r.d_size;
+        if (d_callAbortInSerialInsteadOfExit)
+        {
+            ::abort();
+        }
+        else
+        {
+            exit(-1);
+        }
 #endif
     }
 
-    void AriesMPI::FreeCommunicator()
+    void AriesMPI::Init(int* argc, char** argv[])
     {
 #ifdef ARIES_HAVE_MPI
-        if (d_comm != MPI_COMM_NULL)
-        {
-            ARIES_ASSERT(AriesMPI::usingMPI());
-            Comm_free(&d_comm);
-            // d_comm is now set to MPI_COMM_NULL;
-        }
-#else
-        d_comm = MPI_COMM_NULL;
-#endif
-        d_rank = 0;
-        d_size = 1;
-    }
+        MPI_Init(argc, argv);
+        d_mpiIsInitialized = true;
+        d_weStartedMpi = true;
 
-    int AriesMPI::CompareCommunicator(const AriesMPI& r) const
+        Comm dup_comm;
+        MPI_Comm_dup(MPI_COMM_WORLD, &dup_comm);
+        d_ariesWorld.setCommunicator(dup_comm);
+#else
+        NULL_USE(argc);
+        NULL_USE(argv);
+        d_ariesWorld.d_comm = MPI_COMM_WORLD;
+        d_ariesWorld.d_size = 1;
+        d_ariesWorld.d_rank = 0;
+#endif
+
+        if (getenv("ARIES_ABORT_ON_ERROR"))
+        {
+            AriesMPI::SetCallAbortInSerialInsteadOfExit(true);
+            AriesMPI::SetCallAbortInParallelInsteadOfMPIAbort(true);
+        }
+    }
+    
+    void AriesMPI::Init(Comm comm)
     {
+        if (comm == MPI_COMM_NULL)
+        {
+            std::cerr << "AriesMPI::Init: invalid initializing Communicator."
+                      << std::endl;
+        }
 #ifdef ARIES_HAVE_MPI
-        int compare_result;
-        int mpi_err = Comm_compare(d_comm, r.d_comm, &compare_result);
-        if (mpi_err != MPI_SUCCESS)
-        {
-            ARIES_ERROR("AriesMPI::compareCommunicator: Error comparing two communicators.");
-        }
-        return compare_result;
-#else
-        NULL_USE(r);
-        return d_comm == r.d_comm ? MPI_IDENT : MPI_CONGRUENT;
+        d_mpiIsInitialized = true;
+        d_weStartedMpi = false;
+
+        Comm dup_comm;
+        MPI_Comm_dup(comm, &dup_comm);
+        d_ariesWorld.setCommunicator(dup_comm);
 #endif
+        if (getenv("ARIES_ABORT_ON_ERROR"))
+        {
+            AriesMPI::SetCallAbortInSerialInsteadOfExit(true);
+            AriesMPI::SetCallAbortInParallelInsteadOfMPIAbort(true);
+        }
+    }
+    
+    void AriesMPI::InitMPIDisabled()
+    {
+        d_mpiIsInitialized = false;
+        d_weStartedMpi = false;
+
+        d_ariesWorld.d_comm = MPI_COMM_WORLD;
+        d_ariesWorld.d_size = 1;
+        d_ariesWorld.d_rank = 0;
+
+        if (getenv("ARIES_ABORT_ON_ERROR"))
+        {
+            AriesMPI::SetCallAbortInSerialInsteadOfExit(true);
+            AriesMPI::SetCallAbortInParallelInsteadOfMPIAbort(true);
+        }
     }
 
-    void AriesMPI::SetCommunicator(const Comm& comm)
+    void AriesMPI::Finalize()
     {
-        d_comm = comm;
-        d_rank = 0;
-        d_size = 1;
 #ifdef ARIES_HAVE_MPI
         if (d_mpiIsInitialized)
         {
-            if (d_comm != MPI_COMM_NULL)
-            {
-                MPI_Comm_rank(d_comm, &d_rank);
-                MPI_Comm_size(d_comm, &d_size);
-            }
+            MPI_Comm_free(&d_ariesWorld.d_comm);
+        }
+        else
+        {
+            d_ariesWorld.d_comm = MPI_COMM_NULL;
+        }
+
+        if (d_weStartedMpi)
+        {
+            MPI_Finalize();
         }
 #endif
     }
-
+    
 #ifndef ARIES_HAVE_MPI
     AriesMPI::Status::Status():
             MPI_SOURCE(-1),
@@ -1386,4 +1323,5 @@ namespace ARIES
     }
 #endif
 
-}
+} // end namespace ARIES
+
