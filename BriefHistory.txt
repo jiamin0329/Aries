@@ -3,6 +3,35 @@ Date        Author                 Description
 2016-10-13  Jiamin Xu              Setup git/doxygen
 2016-10-14  Jiamin Xu              Done:AriesManager.hpp/AriesManager.cpp 
 2016-10-15  Jiamin Xu              Done:AriesMPI.hpp/AriesMPI.cpp
+2016-10-15  Jiamin Xu              Done:StartupShutdownManager.hpp/StartupShutdownManager.cpp
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

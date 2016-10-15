@@ -42,13 +42,12 @@ namespace ARIES
     {
         if (!d_instance)
         {
-            d_instance = new TimerManager(input_db);
+            d_instance = new TimerManager();
             d_instance->ComputeOverheadConstants();
             d_instance->d_mainTimer->Start();
         }
         return d_instance;
     }
-
 
     Timer* TimerManager::GetTimer(const std::string& name, bool ignore_timer_input)
     {
@@ -96,6 +95,655 @@ namespace ARIES
         return timer;
     }
 
+    bool TimerManager::CheckTimerExists(Timer* timer, const std::string& name) const
+    {
+        TBOX_ASSERT(!name.empty());
+
+        bool timer_found = CheckTimerExistsInArray(timer, name, d_timers);
+        if (!timer_found)
+            timer_found = CheckTimerExistsInArray(timer, name, d_inactiveTimers);
+        
+        return timer_found;
+    }
+    
+    bool TimerManager::CheckTimerRunning(const std::string& name) const
+    {
+        bool is_running = false;
+        TBOX_ASSERT(!name.empty());
+        
+        Timer* timer;
+        if (CheckTimerExistsInArray(timer, name, d_timers))
+            is_running = timer->IsRunning();
+        
+        return is_running;
+    }
+    
+    void TimerManager::ResetAllTimers()
+    {
+        d_mainTimer->Stop();
+        d_mainTimer->Reset();
+        d_mainTimer->Start();
+
+        for (size_t i = 0; i < d_timers.size(); ++i)
+        {
+            d_timers[i]->Reset();
+        }
+        for (size_t j = 0; j < d_inactiveTimers.size(); ++j)
+        {
+            d_inactiveTimers[j]->Reset();
+        }
+    }
+    
+    void TimerManager::Print(std::ostream& os)
+    {
+        const AriesMPI& mpi(AriesMPI::GetAriesWorld());
+        /*
+         * There are 18 possible timer values that users may wish to look at.
+         * (i.e. User/sys/wallclock time, Total or Exclusive, for individual
+         * processor, max across all procs, or summed across all procs).
+         * This method builds an array that holds these values and outputs
+         * them in column format.
+         */
+
+        /*
+         * First, stop the main_timer so we have an accurate measure of
+         * overall run time so far.
+         */
+        d_mainTimer->Stop();
+
+        /*
+         * If we are doing max or sum operations, make sure timers are
+         * consistent across processors.
+         */
+        if (d_printSummed || d_printMax)
+        {
+            CheckConsistencyAcrossProcessors();
+        }
+
+        /*
+         * Invoke arrays used to hold timer names, timer_values, and
+         * max_processor_ids (i.e. processor holding the maximum time).
+         */
+        double(*timer_values)[18] = new double[d_timers.size() + 1][18];
+        int(*max_processor_id)[2] = new int[d_timers.size() + 1][2];
+        std::vector<std::string> timer_names(static_cast<int>(d_timers.size()) + 1);
+
+        /*
+         * Fill in timer_values and timer_names arrays, based on values of
+         * d_print_total, d_print_exclusive,
+         * d_print_user, d_print_sys, d_print_wallclock,
+         * d_print_processor, d_print_summed, d_print_max.
+         */
+        BuildTimerArrays(timer_values, max_processor_id, timer_names);
+
+        /*
+         * Now that we have built up the array, select output options.
+         *
+         * 1) If user has requested any two (or more) of {user, system, and
+         *    walltime} then use the format:
+         *    [Exclusive,Total]
+         *    [Processor,Summed,Max]
+         *       Name     User    System   Wall  (Max Processor)
+         *
+         * 2) If user chose just one of {User, system, or walltime}, then use the
+         *    format:
+         *    [Exclusive,Total]
+         *       Name     Processor   Summed   Max  Max Processor
+         *
+         * 3) If user chose just one of {user, system, or walltime} and just one
+         *    of {processor, summed, max} then use the format:
+         *       Name     [Processor,Summed,Max]  Total   Exclusive
+         *
+         * If the user wants overhead stats, print those as:
+         *   Timer Overhead:
+         *     Timer Name    number calls     Estimated overhead
+         *
+         * If they want output of a concurrent timer tree, print this as:
+         *   Concurrent Tree:
+         *     Timer Name    names of timers called by it.
+         */
+        
+        /*
+         * Determine which case we are doing - #1, #2, or #3
+         * #1 case - user requested any two (or more) of [user,system,wallclock]
+         * #2 case - user requested one of [user,system,wallclock]
+         * #3 case - user requested one of [user,system,wallclock] and one of [processor, summed, max]
+         */
+        bool case1 = false;
+        bool case2 = false;
+        bool case3 = false;
+        if ((d_printUser && d_printSys)  ||
+            (d_printSys  && d_printWall) ||
+            (d_printWall && d_printUser))
+        {
+            case1 = true;
+        }
+        else
+        {
+            case2 = true;
+            if (( d_printProcessor && !d_printSummed && !d_printMax) ||
+                (!d_printProcessor &&  d_printSummed && !d_printMax) ||
+                (!d_printProcessor && !d_printSummed &&  d_printMax))
+            {
+                case2 = false;
+                case3 = true;
+            }
+        }
+
+        std::string table_title;
+        std::vector<std::string> column_titles(4);
+        int column_ids[3] = { 0, 0, 0 };
+        int j, k;
+
+        /*
+         * Now print out the data
+         */
+        if (case1)
+        {
+            column_titles[0] = "";
+            column_titles[1] = "";
+            column_titles[2] = "";
+            column_titles[3] = "Proc";
+
+            if (d_print_user)
+                column_titles[0] = "User Time";
+            else 
+                column_titles[0] = "";
+      
+            if (d_print_sys) 
+                column_titles[1] = "Sys Time";
+            else 
+                column_titles[1] = "";
+      
+            if (d_print_wall) 
+                column_titles[2] = "Wall Time";
+            else 
+                column_titles[2] = "";
+      
+
+            for (k = 0; k < 2; ++k)
+            {
+                if ((k == 0 && d_printExclusive) ||
+                    (k == 1 && d_printTotal))
+                {
+                    for (j = 0; j < 3; ++j)
+                    {
+                        if ((j == 0 && d_print_processor) ||
+                            (j == 1 && d_print_summed) ||
+                            (j == 2 && d_print_max))
+                        {
+                            if (j == 0)
+                            {
+                                std::ostringstream out;
+                                if (k == 0)
+                                {
+                                    out << "EXCLUSIVE TIME \nPROCESSOR:"
+                                        << mpi.GetRank();
+                                    table_title = out.str();
+
+                                    column_ids[0] = 0;
+                                    column_ids[1] = 1;
+                                    column_ids[2] = 2;
+                                }
+                                else if (k == 1)
+                                {
+                                    out << "TOTAL TIME \nPROCESSOR:"
+                                        << mpi.GetRank();
+                                    table_title = out.str();
+
+                                    column_ids[0] = 9;
+                                    column_ids[1] = 10;
+                                    column_ids[2] = 11;
+                                }
+                                PrintTable(table_title,
+                                           column_titles,
+                                           timer_names,
+                                           column_ids,
+                                           timer_values,
+                                           os);
+                            }
+                            else if (j == 1)
+                            {
+                                if (k == 0)
+                                {
+                                    table_title = "EXCLUSIVE TIME \nSUMMED ACROSS ALL PROCESSORS";
+                                    column_ids[0] = 3;
+                                    column_ids[1] = 4;
+                                    column_ids[2] = 5;
+                                }
+                                else if (k == 1)
+                                {
+                                    table_title = "TOTAL TIME \nSUMMED ACROSS ALL PROCESSORS:";
+                                    column_ids[0] = 12;
+                                    column_ids[1] = 13;
+                                    column_ids[2] = 14;
+                                }
+                                printTable(table_title,
+                                           column_titles,
+                                           timer_names,
+                                           column_ids,
+                                           timer_values,
+                                           os);
+                                
+                            }
+                            else if (j == 2)
+                            {
+                                int max_array_id = 0; // identifies which of the two
+                                // max_processor_id values to print
+                                if (k == 0)
+                                {
+                                    table_title = "EXCLUSIVE TIME \nMAX ACROSS ALL PROCESSORS";
+                                    column_ids[0] = 6;
+                                    column_ids[1] = 7;
+                                    column_ids[2] = 8;
+                                    max_array_id = 0;
+                                }
+                                else if (k == 1)
+                                {
+                                    table_title = "TOTAL TIME \nMAX ACROSS ALL PROCESSORS";
+                                    column_ids[0] = 15;
+                                    column_ids[1] = 16;
+                                    column_ids[2] = 17;
+                                    max_array_id = 1;
+                                }
+                                printTable(table_title,
+                                           column_titles,
+                                           timer_names,
+                                           max_processor_id,
+                                           max_array_id,
+                                           column_ids,
+                                           timer_values,
+                                           os);
+                            }
+                        } // if j
+                    } // for j
+                } // if k
+            } // for k
+        } // if case 1
+
+        if (case2)
+        {
+            for (k = 0; k < 2; ++k)
+            {
+                if ((k == 0 && d_print_exclusive) ||
+                    (k == 1 && d_print_total))
+                {
+                    int max_array_id = 0;
+                    std::string table_title_line_1;
+                    std::string table_title_line_2;
+                    if (k == 0)
+                    {
+                        table_title_line_1 = "EXCLUSVE \n";
+                        max_array_id = 0;
+                    }
+                    else if (k == 1)
+                    {
+                        table_title_line_1 = "TOTAL \n";
+                        max_array_id = 1;
+                    }
+                    if (d_print_user)
+                    {
+                        table_title_line_2 = "USER TIME";
+                    }
+                    else if (d_print_sys)
+                    {
+                        table_title_line_2 = "SYSTEM TIME";
+                    }
+                    else if (d_print_wall)
+                    {
+                        table_title_line_2 = "WALLCLOCK TIME";
+                    }
+                    table_title = table_title_line_1;
+                    table_title += table_title_line_2;
+
+                    column_titles[0] = "";
+                    column_titles[1] = "";
+                    column_titles[2] = "";
+                    column_titles[3] = "";
+                    if (d_print_processor)
+                    {
+                        std::ostringstream out;
+                        out << "Proc: " << mpi.GetRank();
+                        column_titles[0] = out.str();
+                    }
+                    if (d_print_summed)
+                    {
+                        column_titles[1] = "Summed";
+                    }
+                    if (d_print_max)
+                    {
+                        column_titles[2] = "Max";
+                        column_titles[3] = "Proc";
+                    }
+
+                    if (d_print_user)
+                    {
+                        if (k == 0)
+                        {
+                            column_ids[0] = 0;
+                            column_ids[1] = 3;
+                            column_ids[2] = 6;
+                        }
+                        else if (k == 1)
+                        {
+                            column_ids[0] = 9;
+                            column_ids[1] = 12;
+                            column_ids[2] = 15;
+                        }
+                    }
+                    else if (d_print_sys)
+                    {
+                        if (k == 0)
+                        {
+                            column_ids[0] = 1;
+                            column_ids[1] = 4;
+                            column_ids[2] = 7;
+                        }
+                        else if (k == 1)
+                        {
+                            column_ids[0] = 10;
+                            column_ids[1] = 13;
+                            column_ids[2] = 16;
+                        }
+                    }
+                    else if (d_print_wall)
+                    {
+                        if (k == 0)
+                        {
+                            column_ids[0] = 2;
+                            column_ids[1] = 5;
+                            column_ids[2] = 8;
+                        }
+                        else if (k == 1)
+                        {
+                            column_ids[0] = 11;
+                            column_ids[1] = 14;
+                            column_ids[2] = 17;
+                        }
+                    }
+
+                    PrintTable(table_title,
+                               column_titles,
+                               timer_names,
+                               max_processor_id,
+                               max_array_id,
+                               column_ids,
+                               timer_values,
+                               os);
+                } // if k
+            }  // for k
+        } // if case2
+        
+        if (case3)
+        {
+            if (d_print_exclusive && !d_print_total)
+            {
+                column_titles[0] = "Exclusive";
+                column_titles[1] = "";
+            }
+            else if (!d_print_exclusive && d_print_total)
+            {
+                column_titles[0] = "";
+                column_titles[1] = "Total";
+            }
+            else if (d_print_exclusive && d_print_total)
+            {
+                column_titles[0] = "Exclusive";
+                column_titles[1] = "Total";
+            }
+            column_titles[3] = "";
+
+            column_ids[2] = 0;
+            if (d_print_user)
+            {
+                if (d_print_processor)
+                {
+                    std::ostringstream out;
+                    out << "USER TIME \nPROCESSOR: " << mpi.getRank();
+                    table_title = out.str();
+
+                    column_ids[0] = 0;
+                    column_ids[1] = 9;
+                }
+                else if (d_print_summed)
+                {
+                    table_title = "USER TIME \nSUMMED ACROSS ALL PROCESSORS";
+                    column_ids[0] = 3;
+                    column_ids[1] = 12;
+                }
+                else if (d_print_max)
+                {
+                    table_title = "USER TIME \nMAX ACROSS ALL PROCESSORS";
+                    column_ids[0] = 6;
+                    column_ids[1] = 15;
+                }
+            }
+            else if (d_print_sys)
+            {
+                if (d_print_processor)
+                {
+                    std::ostringstream out;
+                    out << "SYSTEM TIME \nPROCESSOR: " << mpi.getRank();
+                    table_title = out.str();
+
+                    column_ids[0] = 1;
+                    column_ids[1] = 10;
+                }
+                else if (d_print_summed)
+                {
+                    table_title = "SYSTEM TIME \nSUMMED ACROSS ALL PROCESSORS";
+                    column_ids[0] = 4;
+                    column_ids[1] = 13;
+                }
+                else if (d_print_max)
+                {
+                    table_title = "SYSTEM TIME \nMAX ACROSS ALL PROCESSORS";
+                    column_ids[0] = 7;
+                    column_ids[1] = 16;
+                }
+            }
+            else if (d_print_wall)
+            {
+                if (d_print_processor)
+                {
+                    std::ostringstream out;
+                    out << "WALLCLOCK TIME \nPROCESSOR: " << mpi.getRank();
+                    table_title = out.str();
+
+                    column_ids[0] = 2;
+                    column_ids[1] = 11;
+                }
+                else if (d_print_summed)
+                {
+                    table_title = "WALLCLOCK TIME \nSUMMED ACROSS ALL PROCESSORS";
+                    column_ids[0] = 5;
+                    column_ids[1] = 14;
+                }
+                else if (d_print_max)
+                {
+                    table_title = "WALLCLOCK TIME \nMAX ACROSS ALL PROCESSORS";
+                    column_ids[0] = 8;
+                    column_ids[1] = 17;
+                }
+            }
+            PrintTable(table_title,
+                       column_titles,
+                       timer_names,
+                       column_ids,
+                       timer_values,
+                       os);
+        }
+
+        /*
+         * Print overhead stats - number of accesses and estimated cost
+         * (estimated cost computed based on the number of accesses and
+         * a fixed d_timer_active_access_time value).
+         * Store the number of accesses in max_processor_id[0] and the estimated
+         * cost in timer_values[0] and use the printTable method.
+         */
+        if (d_print_timer_overhead)
+        {
+            PrintOverhead(timer_names,
+                          timer_values,
+                          os);
+        }
+
+        /*
+         * Print tree of concurrent timers.
+         */
+        if (d_printConcurrent)
+        {
+            PrintConcurrent(os);
+        }
+
+        delete[] timer_values;
+        delete[] max_processor_id;
+        /*
+         * Lastly, restart the main_timer that we stopped at the beginning of
+         * this routine
+         */
+        d_mainTimer->Start();
+    }
+
+    TimerManager::TimerManager():
+            d_timerActiveAccessTime(-9999.0),
+            d_timerInactiveAccessTime(-9999.0),
+            d_mainTimer(new Timer("TOTAL RUN TIME")),
+            d_lengthPackageNames(0),
+            d_lengthClassNames(0),
+            d_lengthClassMethodNames(0),
+            d_printThreshold(0.25),
+            d_printExclusive(false),
+            d_printTotal(true),
+            d_printProcessor(true),
+            d_printMax(false),
+            d_printSummed(false),
+            d_printUser(false),
+            d_printSys(false),
+            d_printWall(true),
+            d_printPercentage(true),
+            d_printConcurrent(false),
+            d_printTimerOverhead(false)
+    {
+        GetFromInput(input_db);
+    }
+
+    TimerManager::~TimerManager()
+    {
+        d_mainTimer->stop();
+        d_mainTimer.reset();
+
+        d_timers.clear();
+        d_inactiveTimers.clear();
+
+        d_exclusiveTimerStack.clear();
+
+        d_packageNames.clear();
+        d_classNames.clear();
+        d_classMethodNames.clear();
+    }
+
+    void TimerManager::RegisterSingletonSubclassInstance(TimerManager* subclassInstance)
+    {
+        if (!d_instance)
+        {
+            d_instance = subclassInstance;
+        }
+        else
+        {
+            ARIES_ERROR("TimerManager internal error...\n"
+                        << "Attemptng to set Singleton instance to subclass instance,"
+                        << "\n but Singleton instance already set." << std::endl);
+        }
+    }
+    
+    void TimerManager::StartTime(Timer* timer)
+    {
+        ARIES_ASSERT(timer != 0);
+
+        if (timer->IsActive())
+        {
+        }
+
+        if (d_printExclusive)
+        {
+            if (!d_exclusiveTimerStack.empty())
+            {
+                ((Timer*)d_exclusiveTimerStack.front())->StopExclusive();
+            }
+            Timer* stack_timer = timer;
+            d_exclusiveTimerStack.push_front(stack_timer);
+            stack_timer->StartExclusive();
+        }
+
+        if (d_printConcurrent)
+        {
+            for (size_t i = 0; i < d_timers.size(); ++i)
+            {
+                if ((d_timers[i].get() != timer) && d_timers[i]->IsRunning())
+                {
+                    d_timers[i]->AddConcurrentTimer(*d_timers[i]);
+                }
+            }
+        }
+    }
+
+    void TimerManager::StopTime(Timer* timer)
+    {
+        ARIES_ASSERT(timer != 0);
+
+        if (d_printExclusive)
+        {
+            timer->StopExclusive();
+            if (!d_exclusiveTimerStack.empty())
+            {
+                d_exclusiveTimerStack.pop_front();
+                if (!d_exclusiveTimerStack.empty())
+                {
+                    ((Timer *)d_exclusiveTimerStack.front())->StartExclusive();
+                }
+            }
+        }
+    }
+
+    void TimerManager::ActivateExistingTimers()
+    {
+        std::vector<Timer* >::iterator it = d_inactiveTimers.begin();
+        while (it != d_inactiveTimers.end())
+        {
+            bool timer_active = CheckTimerInNameLists((*it)->GetName());
+            if (timer_active)
+            {
+                (*it)->SetActive(true);
+                d_timers.push_back((*it));
+                it = d_inactiveTimers.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+
+    bool TimerManager::CheckTimerExistsInArray(Timer* timer, const std::string& name, const std::vector<Timee* > timer_array) const
+    {
+        bool timer_found = false;
+
+        timer.Reset();
+        if (!name.empty())
+        {
+            for (size_t i = 0; i < timer_array.size(); ++i)
+            {
+                if (timer_array[i]->GetName() == name)
+                {
+                    timer_found = true;
+                    timer = timer_array[i];
+                    break;
+                }
+            }
+        }
+        return timer_found;
+    }
 
 
 
@@ -103,6 +751,32 @@ namespace ARIES
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
 
 
 
@@ -115,254 +789,6 @@ namespace ARIES
             d_instance = NULL;
         }
     }
-
-    void TimerManager::registerSingletonSubclassInstance(TimerManager* subclass_instance)
-    {
-        if (!d_instance)
-        {
-            d_instance = subclass_instance;
-        }
-        else
-        {
-            TBOX_ERROR("TimerManager internal error...\n"
-                       << "Attemptng to set Singleton instance to subclass instance,"
-                       << "\n but Singleton instance already set." << std::endl);
-        }
-    }
-    
-    TimerManager::TimerManager(const boost::shared_ptr<Database>& input_db):
-            d_timer_active_access_time(-9999.0),
-            d_timer_inactive_access_time(-9999.0),
-            d_main_timer(new Timer("TOTAL RUN TIME")),
-            d_length_package_names(0),
-            d_length_class_names(0),
-            d_length_class_method_names(0),
-            d_print_threshold(0.25),
-            d_print_exclusive(false),
-            d_print_total(true),
-            d_print_processor(true),
-            d_print_max(false),
-            d_print_summed(false),
-            d_print_user(false),
-            d_print_sys(false),
-            d_print_wall(true),
-            d_print_percentage(true),
-            d_print_concurrent(false),
-            d_print_timer_overhead(false)
-    {
-        /*
-         * Create a timer that measures overall solution time.  If the
-         * application uses Tau, this timer will effectively measure
-         * uninstrumented parts of the library.  Hence, use a different name
-         * for the different cases to avoid confusion in the Tau analysis tool.
-         */
-        getFromInput(input_db);
-    }
-
-    TimerManager::~TimerManager()
-    {
-        d_main_timer->stop();
-        d_main_timer.reset();
-
-        d_timers.clear();
-        d_inactive_timers.clear();
-
-        d_exclusive_timer_stack.clear();
-
-        d_package_names.clear();
-        d_class_names.clear();
-        d_class_method_names.clear();
-    }
-
-    /*
-     * Utility functions for creating timers, adding them to the manager
-     * database, and checking whether a particular timer exists.
-     *
-     *    o checkTimerExistsInArray is private.  It returns true if a timer
-     *      matching the name string exists in the array and returns false
-     *      otherwise.  If such a timer exists, the pointer is set to that
-     *      timer; otherwise the pointer is null.
-     *
-     *    o getTimer returns a timer with the given name.  It will be active
-     *      if its name appears in the input file, or if it is added with
-     *      a `true' argument.  Otherwise the timer will be inactive.
-     *
-     *    o checkTimerExists returns true if a timer matching the name
-     *      string exists and false otherwise.  If such a timer exists,
-     *      the pointer is set to that timer; otherwise the pointer is null.
-     */
-
-    bool TimerManager::checkTimerExistsInArray(boost::shared_ptr<Timer>& timer, const std::string& name, const std::vector<boost::shared_ptr<Timer> >& timer_array) const
-    {
-        bool timer_found = false;
-
-        timer.reset();
-        if (!name.empty())
-        {
-            for (size_t i = 0; i < timer_array.size(); ++i)
-            {
-                if (timer_array[i]->getName() == name)
-                {
-                    timer_found = true;
-                    timer = timer_array[i];
-                    break;
-                }
-            }
-        }
-        return timer_found;
-    }
-
-    void TimerManager::activateExistingTimers()
-    {
-        std::vector<boost::shared_ptr<Timer> >::iterator it = d_inactive_timers.begin();
-        while (it != d_inactive_timers.end())
-        {
-            bool timer_active = checkTimerInNameLists((*it)->getName());
-            if (timer_active)
-            {
-                (*it)->setActive(true);
-                d_timers.push_back((*it));
-                it = d_inactive_timers.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
-    }
-
-
-bool
-TimerManager::checkTimerExists(
-   boost::shared_ptr<Timer>& timer,
-   const std::string& name) const
-{
-#ifdef ENABLE_SAMRAI_TIMERS
-   TBOX_ASSERT(!name.empty());
-
-   bool timer_found = checkTimerExistsInArray(timer,
-         name,
-         d_timers);
-
-   if (!timer_found) {
-      timer_found = checkTimerExistsInArray(timer,
-            name,
-            d_inactive_timers);
-   }
-
-   return timer_found;
-
-#else
-   return false;
-
-#endif
-}
-
-/*
- *************************************************************************
- *
- * Utility functions to check whether timer is running and to reset
- * all active timers.
- *
- *************************************************************************
- */
-
-bool
-TimerManager::checkTimerRunning(
-   const std::string& name) const
-{
-   bool is_running = false;
-#ifdef ENABLE_SAMRAI_TIMERS
-
-   TBOX_ASSERT(!name.empty());
-   boost::shared_ptr<Timer> timer;
-   if (checkTimerExistsInArray(timer, name, d_timers)) {
-      is_running = timer->isRunning();
-   }
-#endif
-   return is_running;
-}
-
-void
-TimerManager::resetAllTimers()
-{
-#ifdef ENABLE_SAMRAI_TIMERS
-   d_main_timer->stop();
-   d_main_timer->reset();
-   d_main_timer->start();
-
-   for (size_t i = 0; i < d_timers.size(); ++i) {
-      d_timers[i]->reset();
-   }
-   for (size_t j = 0; j < d_inactive_timers.size(); ++j) {
-      d_inactive_timers[j]->reset();
-   }
-#endif
-}
-
-/*
- *************************************************************************
- *
- * Protected start and stop routines for exclusive timer management.
- *
- *************************************************************************
- */
-
-void
-TimerManager::startTime(
-   Timer* timer)
-{
-#ifdef ENABLE_SAMRAI_TIMERS
-   TBOX_ASSERT(timer != 0);
-
-   if (timer->isActive()) {
-   }
-
-   if (d_print_exclusive) {
-      if (!d_exclusive_timer_stack.empty()) {
-         ((Timer *)d_exclusive_timer_stack.front())->stopExclusive();
-      }
-      Timer* stack_timer = timer;
-      d_exclusive_timer_stack.push_front(stack_timer);
-      stack_timer->startExclusive();
-   }
-
-   if (d_print_concurrent) {
-      for (size_t i = 0; i < d_timers.size(); ++i) {
-         if ((d_timers[i].get() != timer) && d_timers[i]->isRunning()) {
-            d_timers[i]->addConcurrentTimer(*d_timers[i]);
-         }
-      }
-   }
-#endif
-}
-
-void
-TimerManager::stopTime(
-   Timer* timer)
-{
-#ifdef ENABLE_SAMRAI_TIMERS
-   TBOX_ASSERT(timer != 0);
-
-   if (d_print_exclusive) {
-      timer->stopExclusive();
-      if (!d_exclusive_timer_stack.empty()) {
-         d_exclusive_timer_stack.pop_front();
-         if (!d_exclusive_timer_stack.empty()) {
-            ((Timer *)d_exclusive_timer_stack.front())->startExclusive();
-         }
-      }
-   }
-#endif
-}
-
-/*
- *************************************************************************
- *
- * Parser to see if Timer has been registered or not.
- *
- *************************************************************************
- */
 
 bool
 TimerManager::checkTimerInNameLists(
@@ -624,468 +1050,6 @@ TimerManager::checkTimerInNameLists(
 #else
    return false;
 
-#endif
-}
-
-/*
- *************************************************************************
- *
- * Print timer information from each processor.
- *
- *************************************************************************
- */
-
-void
-TimerManager::print(
-   std::ostream& os)
-{
-#ifdef ENABLE_SAMRAI_TIMERS
-   const SAMRAI_MPI& mpi(SAMRAI_MPI::getSAMRAIWorld());
-   /*
-    * There are 18 possible timer values that users may wish to look at.
-    * (i.e. User/sys/wallclock time, Total or Exclusive, for individual
-    * processor, max across all procs, or summed across all procs).
-    * This method builds an array that holds these values and outputs
-    * them in column format.
-    */
-
-   /*
-    * First, stop the main_timer so we have an accurate measure of
-    * overall run time so far.
-    */
-   d_main_timer->stop();
-
-   /*
-    * If we are doing max or sum operations, make sure timers are
-    * consistent across processors.
-    */
-   if (d_print_summed || d_print_max) {
-      checkConsistencyAcrossProcessors();
-   }
-
-   /*
-    * Invoke arrays used to hold timer names, timer_values, and
-    * max_processor_ids (i.e. processor holding the maximum time).
-    */
-   double(*timer_values)[18] = new double[d_timers.size() + 1][18];
-   int(*max_processor_id)[2] = new int[d_timers.size() + 1][2];
-   std::vector<std::string> timer_names(static_cast<int>(d_timers.size()) + 1);
-
-   /*
-    * Fill in timer_values and timer_names arrays, based on values of
-    * d_print_total, d_print_exclusive,
-    * d_print_user, d_print_sys, d_print_wallclock,
-    * d_print_processor, d_print_summed, d_print_max.
-    */
-   buildTimerArrays(timer_values, max_processor_id, timer_names);
-
-   /*
-    * Now that we have built up the array, select output options.
-    *
-    * 1) If user has requested any two (or more) of {user, system, and
-    *    walltime} then use the format:
-    *    [Exclusive,Total]
-    *    [Processor,Summed,Max]
-    *       Name     User    System   Wall  (Max Processor)
-    *
-    * 2) If user chose just one of {User, system, or walltime}, then use the
-    *    format:
-    *    [Exclusive,Total]
-    *       Name     Processor   Summed   Max  Max Processor
-    *
-    * 3) If user chose just one of {user, system, or walltime} and just one
-    *    of {processor, summed, max} then use the format:
-    *       Name     [Processor,Summed,Max]  Total   Exclusive
-    *
-    * If the user wants overhead stats, print those as:
-    *   Timer Overhead:
-    *     Timer Name    number calls     Estimated overhead
-    *
-    * If they want output of a concurrent timer tree, print this as:
-    *   Concurrent Tree:
-    *     Timer Name    names of timers called by it.
-    */
-
-   /*
-    * Determine which case we are doing - #1, #2, or #3
-    * #1 case - user requested any two (or more) of [user,system,wallclock]
-    * #2 case - user requested one of [user,system,wallclock]
-    * #3 case - user requested one of [user,system,wallclock] and one of
-    *           [processor, summed, max]
-    */
-   bool case1 = false;
-   bool case2 = false;
-   bool case3 = false;
-   if ((d_print_user && d_print_sys) ||
-       (d_print_sys && d_print_wall) ||
-       (d_print_wall && d_print_user)) {
-      case1 = true;
-   } else {
-      case2 = true;
-      if ((d_print_processor && !d_print_summed && !d_print_max) ||
-          (!d_print_processor && d_print_summed && !d_print_max) ||
-          (!d_print_processor && !d_print_summed && d_print_max)) {
-         case2 = false;
-         case3 = true;
-      }
-   }
-
-   std::string table_title;
-   std::vector<std::string> column_titles(4);
-   int column_ids[3] = { 0, 0, 0 };
-   int j, k;
-
-   /*
-    * Now print out the data
-    */
-   if (case1) {
-
-      column_titles[0] = "";
-      column_titles[1] = "";
-      column_titles[2] = "";
-      column_titles[3] = "Proc";
-
-      if (d_print_user) {
-         column_titles[0] = "User Time";
-      } else {
-         column_titles[0] = "";
-      }
-      if (d_print_sys) {
-         column_titles[1] = "Sys Time";
-      } else {
-         column_titles[1] = "";
-      }
-      if (d_print_wall) {
-         column_titles[2] = "Wall Time";
-      } else {
-         column_titles[2] = "";
-      }
-
-      for (k = 0; k < 2; ++k) {
-
-         if ((k == 0 && d_print_exclusive) ||
-             (k == 1 && d_print_total)) {
-
-            for (j = 0; j < 3; ++j) {
-
-               if ((j == 0 && d_print_processor) ||
-                   (j == 1 && d_print_summed) ||
-                   (j == 2 && d_print_max)) {
-
-                  if (j == 0) {
-#ifndef LACKS_SSTREAM
-                     std::ostringstream out;
-#endif
-                     if (k == 0) {
-#ifndef LACKS_SSTREAM
-                        out << "EXCLUSIVE TIME \nPROCESSOR:"
-                            << mpi.getRank();
-                        table_title = out.str();
-#else
-                        table_title = "EXCLUSIVE TIME \nPROCESSOR:";
-#endif
-                        column_ids[0] = 0;
-                        column_ids[1] = 1;
-                        column_ids[2] = 2;
-                     } else if (k == 1) {
-#ifndef LACKS_SSTREAM
-                        out << "TOTAL TIME \nPROCESSOR:"
-                            << mpi.getRank();
-                        table_title = out.str();
-#else
-                        table_title = "TOTAL TIME \nPROCESSOR:";
-#endif
-                        column_ids[0] = 9;
-                        column_ids[1] = 10;
-                        column_ids[2] = 11;
-                     }
-                     printTable(table_title,
-                        column_titles,
-                        timer_names,
-                        column_ids,
-                        timer_values,
-                        os);
-                  } else if (j == 1) {
-
-                     if (k == 0) {
-                        table_title =
-                           "EXCLUSIVE TIME \nSUMMED ACROSS ALL PROCESSORS";
-                        column_ids[0] = 3;
-                        column_ids[1] = 4;
-                        column_ids[2] = 5;
-                     } else if (k == 1) {
-                        table_title =
-                           "TOTAL TIME \nSUMMED ACROSS ALL PROCESSORS:";
-                        column_ids[0] = 12;
-                        column_ids[1] = 13;
-                        column_ids[2] = 14;
-                     }
-                     printTable(table_title,
-                        column_titles,
-                        timer_names,
-                        column_ids,
-                        timer_values,
-                        os);
-
-                  } else if (j == 2) {
-
-                     int max_array_id = 0; // identifies which of the two
-                                           // max_processor_id values to print
-                     if (k == 0) {
-                        table_title =
-                           "EXCLUSIVE TIME \nMAX ACROSS ALL PROCESSORS";
-                        column_ids[0] = 6;
-                        column_ids[1] = 7;
-                        column_ids[2] = 8;
-                        max_array_id = 0;
-                     } else if (k == 1) {
-                        table_title =
-                           "TOTAL TIME \nMAX ACROSS ALL PROCESSORS";
-                        column_ids[0] = 15;
-                        column_ids[1] = 16;
-                        column_ids[2] = 17;
-                        max_array_id = 1;
-                     }
-#if 0
-                     printTable(table_title,
-                        column_titles,
-                        timer_names,
-                        &max_processor_id[0][max_array_id],
-                        column_ids,
-                        timer_values,
-                        os);
-#else
-                     printTable(table_title,
-                        column_titles,
-                        timer_names,
-                        max_processor_id,
-                        max_array_id,
-                        column_ids,
-                        timer_values,
-                        os);
-#endif
-                  }
-
-               } // if j
-            } // for j
-         } // if k
-      } // for k
-   } // if case 1
-
-   if (case2) {
-
-      for (k = 0; k < 2; ++k) {
-
-         if ((k == 0 && d_print_exclusive) ||
-             (k == 1 && d_print_total)) {
-
-            int max_array_id = 0;
-            std::string table_title_line_1;
-            std::string table_title_line_2;
-            if (k == 0) {
-               table_title_line_1 = "EXCLUSVE \n";
-               max_array_id = 0;
-            } else if (k == 1) {
-               table_title_line_1 = "TOTAL \n";
-               max_array_id = 1;
-            }
-            if (d_print_user) {
-               table_title_line_2 = "USER TIME";
-            } else if (d_print_sys) {
-               table_title_line_2 = "SYSTEM TIME";
-            } else if (d_print_wall) {
-               table_title_line_2 = "WALLCLOCK TIME";
-            }
-            table_title = table_title_line_1;
-            table_title += table_title_line_2;
-
-            column_titles[0] = "";
-            column_titles[1] = "";
-            column_titles[2] = "";
-            column_titles[3] = "";
-            if (d_print_processor) {
-#ifndef LACKS_SSTREAM
-               std::ostringstream out;
-               out << "Proc: " << mpi.getRank();
-               column_titles[0] = out.str();
-#else
-               column_titles[0] = "Proc: ";
-#endif
-            }
-            if (d_print_summed) {
-               column_titles[1] = "Summed";
-            }
-            if (d_print_max) {
-               column_titles[2] = "Max";
-               column_titles[3] = "Proc";
-            }
-
-            if (d_print_user) {
-               if (k == 0) {
-                  column_ids[0] = 0;
-                  column_ids[1] = 3;
-                  column_ids[2] = 6;
-               } else if (k == 1) {
-                  column_ids[0] = 9;
-                  column_ids[1] = 12;
-                  column_ids[2] = 15;
-               }
-            } else if (d_print_sys) {
-               if (k == 0) {
-                  column_ids[0] = 1;
-                  column_ids[1] = 4;
-                  column_ids[2] = 7;
-               } else if (k == 1) {
-                  column_ids[0] = 10;
-                  column_ids[1] = 13;
-                  column_ids[2] = 16;
-               }
-            } else if (d_print_wall) {
-               if (k == 0) {
-                  column_ids[0] = 2;
-                  column_ids[1] = 5;
-                  column_ids[2] = 8;
-               } else if (k == 1) {
-                  column_ids[0] = 11;
-                  column_ids[1] = 14;
-                  column_ids[2] = 17;
-               }
-            }
-#if 0
-            printTable(table_title,
-               column_titles,
-               timer_names,
-               &max_processor_id[0][max_array_id],
-               column_ids,
-               timer_values,
-               os);
-#else
-            printTable(table_title,
-               column_titles,
-               timer_names,
-               max_processor_id,
-               max_array_id,
-               column_ids,
-               timer_values,
-               os);
-#endif
-         } // if k
-      }  // for k
-   } // if case2
-
-   if (case3) {
-
-      if (d_print_exclusive && !d_print_total) {
-         column_titles[0] = "Exclusive";
-         column_titles[1] = "";
-      } else if (!d_print_exclusive && d_print_total) {
-         column_titles[0] = "";
-         column_titles[1] = "Total";
-      } else if (d_print_exclusive && d_print_total) {
-         column_titles[0] = "Exclusive";
-         column_titles[1] = "Total";
-      }
-      column_titles[3] = "";
-
-      column_ids[2] = 0;
-      if (d_print_user) {
-         if (d_print_processor) {
-#ifndef LACKS_SSTREAM
-            std::ostringstream out;
-            out << "USER TIME \nPROCESSOR: " << mpi.getRank();
-            table_title = out.str();
-#else
-            table_title = "USER TIME \nPROCESSOR: ";
-#endif
-            column_ids[0] = 0;
-            column_ids[1] = 9;
-         } else if (d_print_summed) {
-            table_title = "USER TIME \nSUMMED ACROSS ALL PROCESSORS";
-            column_ids[0] = 3;
-            column_ids[1] = 12;
-         } else if (d_print_max) {
-            table_title = "USER TIME \nMAX ACROSS ALL PROCESSORS";
-            column_ids[0] = 6;
-            column_ids[1] = 15;
-         }
-      } else if (d_print_sys) {
-         if (d_print_processor) {
-#ifndef LACKS_SSTREAM
-            std::ostringstream out;
-            out << "SYSTEM TIME \nPROCESSOR: " << mpi.getRank();
-            table_title = out.str();
-#else
-            table_title = "SYSTEM TIME \nPROCESSOR:";
-#endif
-            column_ids[0] = 1;
-            column_ids[1] = 10;
-         } else if (d_print_summed) {
-            table_title = "SYSTEM TIME \nSUMMED ACROSS ALL PROCESSORS";
-            column_ids[0] = 4;
-            column_ids[1] = 13;
-         } else if (d_print_max) {
-            table_title = "SYSTEM TIME \nMAX ACROSS ALL PROCESSORS";
-            column_ids[0] = 7;
-            column_ids[1] = 16;
-         }
-      } else if (d_print_wall) {
-         if (d_print_processor) {
-#ifndef LACKS_SSTREAM
-            std::ostringstream out;
-            out << "WALLCLOCK TIME \nPROCESSOR: " << mpi.getRank();
-            table_title = out.str();
-#else
-            table_title = "WALLCLOCK TIME \nPROCESSOR: ";
-#endif
-            column_ids[0] = 2;
-            column_ids[1] = 11;
-         } else if (d_print_summed) {
-            table_title = "WALLCLOCK TIME \nSUMMED ACROSS ALL PROCESSORS";
-            column_ids[0] = 5;
-            column_ids[1] = 14;
-         } else if (d_print_max) {
-            table_title = "WALLCLOCK TIME \nMAX ACROSS ALL PROCESSORS";
-            column_ids[0] = 8;
-            column_ids[1] = 17;
-         }
-      }
-      printTable(table_title,
-         column_titles,
-         timer_names,
-         column_ids,
-         timer_values,
-         os);
-   }
-
-   /*
-    * Print overhead stats - number of accesses and estimated cost
-    * (estimated cost computed based on the number of accesses and
-    * a fixed d_timer_active_access_time value).
-    * Store the number of accesses in max_processor_id[0] and the estimated
-    * cost in timer_values[0] and use the printTable method.
-    */
-   if (d_print_timer_overhead) {
-      printOverhead(timer_names,
-         timer_values,
-         os);
-   }
-
-   /*
-    * Print tree of concurrent timers.
-    */
-   if (d_print_concurrent) {
-      printConcurrent(os);
-   }
-
-   delete[] timer_values;
-   delete[] max_processor_id;
-   /*
-    * Lastly, restart the main_timer that we stopped at the beginning of
-    * this routine
-    */
-   d_main_timer->start();
-#else
-   os << "Timers disabled\n";
 #endif
 }
 
@@ -1922,7 +1886,7 @@ TimerManager::buildTimerArrays(
     */
    timer_names[static_cast<int>(d_timers.size())] = "TOTAL RUN TIME:";
    if (d_print_user) {
-      double main_time = d_main_timer->getTotalUserTime();
+      double main_time = d_mainTimer->getTotalUserTime();
       timer_values[d_timers.size()][0] = main_time;
       timer_values[d_timers.size()][3] = main_time;
       timer_values[d_timers.size()][6] = main_time;
@@ -1935,7 +1899,7 @@ TimerManager::buildTimerArrays(
       }
    }
    if (d_print_sys) {
-      double main_time = d_main_timer->getTotalSystemTime();
+      double main_time = d_mainTimer->getTotalSystemTime();
       timer_values[d_timers.size()][1] = main_time;
       timer_values[d_timers.size()][4] = main_time;
       timer_values[d_timers.size()][7] = main_time;
@@ -1948,7 +1912,7 @@ TimerManager::buildTimerArrays(
       }
    }
    if (d_print_wall) {
-      double main_time = d_main_timer->getTotalWallclockTime();
+      double main_time = d_mainTimer->getTotalWallclockTime();
       timer_values[d_timers.size()][2] = main_time;
       timer_values[d_timers.size()][5] = main_time;
       timer_values[d_timers.size()][8] = main_time;
@@ -2009,8 +1973,7 @@ TimerManager::quicksort(
    int lo,
    int hi)
 {
-#ifdef ENABLE_SAMRAI_TIMERS
-   if (hi <= lo) return;
+#ifdef ENABLE_SAMRAI_TIMERS   if (hi <= lo) return;
 
    /*
     * Put a[i] into position for i between lo and hi
@@ -2414,9 +2377,9 @@ TimerManager::clearArrays()
     * for the different cases to avoid confusion in the Tau analysis tool.
     */
 #ifdef HAVE_TAU
-   d_main_timer.reset(new Timer("UNINSTRUMENTED PARTS"));
+   d_mainTimer.reset(new Timer("UNINSTRUMENTED PARTS"));
 #else
-   d_main_timer.reset(new Timer("TOTAL RUN TIME"));
+   d_mainTimer.reset(new Timer("TOTAL RUN TIME"));
 #endif
 
    d_timers.clear();

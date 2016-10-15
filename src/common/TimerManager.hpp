@@ -16,13 +16,19 @@
 #ifndef ARIES_TIMERMANAGER_HPP
 #define ARIES_TIMERMANAGER_HPP
 
+/* Aries includes */
 #include "Timer.hpp"
-
+/* C++ includes */
 #include <iostream>
 #include <string>
 #include <vector>
 #include <list>
 
+/*
+ *================================================================================
+ *    Class namespaces
+ *================================================================================
+ */
 namespace ARIES
 {
     class TimerManager
@@ -37,11 +43,10 @@ namespace ARIES
         bool CheckTimerRunning(const std::string& name) const;
 
         void ResetAllTimers();
-        void Print(std::ostream& os = plog);
+        void Print(std::ostream& os = plog);  /**< @brief Print timer information from each processor. */
 
     protected:
-
-        explicit TimerManager(const boost::shared_ptr<Database>& input_db = boost::shared_ptr<Database>());
+        explicit TimerManager();
         ~TimerManager();
 
         void RegisterSingletonSubclassInstance(TimerManager* subclass_instance);
@@ -151,6 +156,7 @@ namespace ARIES
 
         static const int DEFAULT_NUMBER_OF_TIMERS_INCREMENT = 128;
         static StartupShutdownManager::Handler d_finalizeHandler;
+        
     }; // end class TimerManager
 } // end namespace ARIES
 

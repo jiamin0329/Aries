@@ -65,6 +65,9 @@ enum
     MPI_TAG_UB
 };
 #endif
+/* C++ includes */
+#include <sys/times.h>
+#include <unistd.h>
 
 /*
  *================================================================================
