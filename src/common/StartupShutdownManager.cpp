@@ -16,10 +16,17 @@
  */
 
 #include "StartupShutdownManager.hpp"
-#include "Utilities.hpp"
 
+/* Aries includes */
+#include "Utilities.hpp"
+/* C++ includes */
 #include <cstdlib>
 
+/*
+ *================================================================================
+ *    Class namespaces
+ *================================================================================
+ */
 namespace ARIES
 {
     bool StartupShutdownManager::d_singletonInitialized = false;
@@ -38,7 +45,70 @@ namespace ARIES
     StartupShutdownManager::ListElement* StartupShutdownManager::d_managerListLast[d_numberOfPriorities];
     int StartupShutdownManager::d_numManagerItems[d_numberOfPriorities];
 
-    void StartupShutdownManager::RegisterHandler(AbstractHandler* handler)
+    StartupShutdownManager::Handler::Handler( void(*initialize)(), void(*startup)(), void(*shutdown)(), void(*finalize)(), unsigned char priority):
+            d_initialize(initialize),
+            d_startup(startup),
+            d_shutdown(shutdown),
+            d_finalize(finalize),
+            d_priority(priority)
+    {
+        StartupShutdownManager::RegisterHandler(this);
+    }
+
+    StartupShutdownManager::Handler::~Handler()
+    {
+    }
+
+    void StartupShutdownManager::Handler::Initialize()
+    {
+        if (d_initialize)
+            (*d_initialize)();
+    }
+
+    void StartupShutdownManager::Handler::Startup()
+    {
+        if (d_startup)
+            (*d_startup)();
+    }
+
+    void StartupShutdownManager::Handler::Shutdown()
+    {
+        if (d_shutdown)
+            (*d_shutdown)();
+    }
+
+    void StartupShutdownManager::Handler::Finalize()
+    {
+        if (d_finalize)
+            (*d_finalize)();
+    }
+
+    unsigned char StartupShutdownManager::Handler::GetPriority()
+    {
+        return d_priority;
+    }
+
+    bool StartupShutdownManager::Handler::HasInitialize()
+    {
+        return d_initialize != 0;
+    }
+
+    bool StartupShutdownManager::Handler::HasStartup()
+    {
+        return d_startup != 0;
+    }
+
+    bool StartupShutdownManager::Handler::HasShutdown()
+    {
+        return d_shutdown != 0;
+    }
+
+    bool StartupShutdownManager::Handler::HasFinalize()
+    {
+        return d_finalize != 0;
+    }
+
+    void StartupShutdownManager::RegisterHandler(IHandler* handler)
     {
         ARIES_ASSERT(handler);
 
@@ -159,18 +229,6 @@ namespace ARIES
         d_startuped = false;
     }
 
-    void StartupShutdownManager::SetupSingleton()
-    {
-        for (int priority = d_numberOfPriorities - 1; priority > -1; --priority)
-        {
-            d_managerList[priority] = 0;
-            d_managerListLast[priority] = 0;
-            d_numManagerItems[priority] = 0;
-        }
-
-        d_singletonInitialized = true;
-    }
-
     void StartupShutdownManager::Finalize()
     {
         ARIES_ASSERT(d_initialized);
@@ -211,76 +269,17 @@ namespace ARIES
         }
         d_initialized = false;
     }
-
-    StartupShutdownManager::AbstractHandler::AbstractHandler()
+    
+    void StartupShutdownManager::SetupSingleton()
     {
-    }
+        for (int priority = d_numberOfPriorities - 1; priority > -1; --priority)
+        {
+            d_managerList[priority] = 0;
+            d_managerListLast[priority] = 0;
+            d_numManagerItems[priority] = 0;
+        }
 
-    StartupShutdownManager::AbstractHandler::~AbstractHandler()
-    {
-    }
-
-    StartupShutdownManager::Handler::Handler( void(*initialize)(), void(*startup)(), void(*shutdown)(), void(*finalize)(), unsigned char priority):
-            d_initialize(initialize),
-            d_startup(startup),
-            d_shutdown(shutdown),
-            d_finalize(finalize),
-            d_priority(priority)
-    {
-        StartupShutdownManager::RegisterHandler(this);
-    }
-
-    StartupShutdownManager::Handler::~Handler()
-    {
-    }
-
-    void StartupShutdownManager::Handler::Initialize()
-    {
-        if (d_initialize)
-            (*d_initialize)();
-    }
-
-    void StartupShutdownManager::Handler::Startup()
-    {
-        if (d_startup)
-            (*d_startup)();
-    }
-
-    void StartupShutdownManager::Handler::Shutdown()
-    {
-        if (d_shutdown)
-            (*d_shutdown)();
-    }
-
-    void StartupShutdownManager::Handler::Finalize()
-    {
-        if (d_finalize)
-            (*d_finalize)();
-    }
-
-    unsigned char StartupShutdownManager::Handler::GetPriority()
-    {
-        return d_priority;
-    }
-
-    bool StartupShutdownManager::Handler::HasInitialize()
-    {
-        return d_initialize != 0;
-    }
-
-    bool StartupShutdownManager::Handler::HasStartup()
-    {
-        return d_startup != 0;
-    }
-
-    bool StartupShutdownManager::Handler::HasShutdown()
-    {
-        return d_shutdown != 0;
-    }
-
-    bool StartupShutdownManager::Handler::HasFinalize()
-    {
-        return d_finalize != 0;
+        d_singletonInitialized = true;
     }
 
     StartupShutdownManager::ListElement::ListElement():
@@ -293,4 +292,5 @@ namespace ARIES
     {
     }
 
-}
+} // end namespace ARIES
+
