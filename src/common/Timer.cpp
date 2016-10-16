@@ -10,44 +10,44 @@
  *
  *================================================================================
  *    Date            Name                    Description of Change
- *    23-Sep-2016     Jiamin Xu               Creation
+ *    16-Oct-2016     Jiamin Xu               Creation
  *================================================================================
  */
+
 #include "Timer.hpp"
 
-#include "SAMRAI_MPI.h"
-#include "IOStream.h"
-#include "SAMRAIManager.h"
-#include "TimerManager.h"
-#include "Utilities.h"
+/* Aries includes */
+#include "AriesMPI.hpp"
+#include "IOStream.hpp"
+#include "AriesManager.hpp"
+#include "TimerManager.hpp"
+#include "Logger.hpp"
 
-namespace AREIS
+
+namespace ARIES
 {
     const int Timer::DEFAULT_NUMBER_OF_TIMERS_INCREMENT = 128;
-    const int Timer::TBOX_TIMER_VERSION = 1;
+    const int Timer::ARIES_TIMER_VERSION = 1;
 
-    /*
-     * The constructor sets the timer name and initializes timer state.
-     */
     Timer::Timer(const std::string& name):
             d_name(name),
-            d_is_running(false),
-            d_is_active(true),
+            d_isRunning(false),
+            d_isActive(true),
             d_accesses(0)
     {
-        Clock::initialize(d_user_start_exclusive);
-        Clock::initialize(d_user_stop_exclusive);
-        Clock::initialize(d_system_start_exclusive);
-        Clock::initialize(d_system_stop_exclusive);
-        Clock::initialize(d_wallclock_start_exclusive);
-        Clock::initialize(d_wallclock_stop_exclusive);
+        Clock::Initialize(d_userStartExclusive);
+        Clock::Initialize(d_userStopExclusive);
+        Clock::Initialize(d_systemStartExclusive);
+        Clock::Initialize(d_systemStopExclusive);
+        Clock::Initialize(d_wallclockStartExclusive);
+        Clock::Initialize(d_wallclockStopExclusive);
 
-        reset();
+        Reset();
     }
     
     Timer::~Timer()
     {
-        d_concurrent_timers.clear();
+        d_concurrentTimers.clear();
     }
     
     /*
@@ -70,110 +70,106 @@ namespace AREIS
      * Also, the timer manager manipulates the exclusive time information
      * the timers when start and stop are called.
      */
-    void Timer::start()
+    void Timer::Start()
     {
-        if (d_is_active)
+        if (d_isActive)
         {
-            if (d_is_running == true)
+            if (d_isRunning == true)
             {
-                ARIES_ERROR("Illegal attempt to start timer '"
-                            << d_name
-                            << "' when it is already started.");
+                ARIES_ERROR("Illegal attempt to start timer '" << d_name << "' when it is already started.");
             }
-            d_is_running = true;
+            d_isRunning = true;
 
             ++d_accesses;
-            Clock::timestamp(d_user_start_total,
-                             d_system_start_total,
-                             d_wallclock_start_total);
+            Clock::Timestamp(d_userStartTotal,
+                             d_systemStartTotal,
+                             d_wallclockStartTotal);
 
-            TimerManager::GetManager()->startTime(this);
+            TimerManager::GetInstance()->StartTime(this);
         }
     }
 
-    void Timer::stop()
+    void Timer::Stop()
     {
-        if (d_is_active)
+        if (d_isActive)
         {
-            if (d_is_running == false)
+            if (d_isRunning == false)
             {
-                ARIES_ERROR("Illegal attempt to stop timer '"
-                            << d_name
-                            << "' when it is already stopped.");
+                ARIES_ERROR("Illegal attempt to stop timer '" << d_name << "' when it is already stopped.");
             }
-            d_is_running = false;
+            d_isRunning = false;
 
-            TimerManager::getManager()->stopTime(this);
+            TimerManager::GetInstance()->StopTime(this);
             
-            Clock::timestamp(d_user_stop_total,
-                             d_system_stop_total,
-                             d_wallclock_stop_total);
+            Clock::Timestamp(d_userStopTotal,
+                             d_systemStopTotal,
+                             d_wallclockStopTotal);
 
-            d_wallclock_total += double(d_wallclock_stop_total - d_wallclock_start_total);
-            d_user_total += double(d_user_stop_total - d_user_start_total);
-            d_system_total += double(d_system_stop_total - d_system_start_total);
+            d_wallclockTotal += double(d_wallclockStopTotal - d_wallclockStartTotal);
+            d_userTotal      += double(     d_userStopTotal -      d_userStartTotal);
+            d_systemTotal    += double(   d_systemStopTotal -    d_systemStartTotal);
         }
     }
 
-    void Timer::startExclusive()
+    void Timer::StartExclusive()
     {
-        if (d_is_active)
+        if (d_isActive)
         {
-            Clock::timestamp(d_user_start_exclusive,
-                             d_system_start_exclusive,
-                             d_wallclock_start_exclusive);
+            Clock::Timestamp(d_userStartExclusive,
+                             d_systemStartExclusive,
+                             d_wallclockStartExclusive);
         }
     }
 
-    void Timer::stopExclusive()
+    void Timer::StopExclusive()
     {
-        if (d_is_active)
+        if (d_isActive)
         {
-            Clock::timestamp(d_user_stop_exclusive,
-                             d_system_stop_exclusive,
-                             d_wallclock_stop_exclusive);
+            Clock::Timestamp(d_userStopExclusive,
+                             d_systemStopExclusive,
+                             d_wallclockStopExclusive);
 
-            d_wallclock_exclusive += double(d_wallclock_stop_exclusive - d_wallclock_start_exclusive);
-            d_user_exclusive += double(d_user_stop_exclusive - d_user_start_exclusive);
-            d_system_exclusive += double(d_system_stop_exclusive - d_system_start_exclusive);
+            d_wallclockExclusive += double(d_wallclockStopExclusive - d_wallclockStartExclusive);
+            d_userExclusive      += double(     d_userStopExclusive -      d_userStartExclusive);
+            d_systemExclusive    += double(   d_systemStopExclusive -    d_systemStartExclusive);
         }
     }
     
-    void Timer::barrierAndStart()
+    void Timer::BarrierAndStart()
     {
-        if (d_is_active)
-            SAMRAI_MPI::getSAMRAIWorld().Barrier();
+        if (d_isActive)
+            AriesMPI::GetAriesWorld().Barrier();
         
-        start();
+        Start();
     }
 
-    void Timer::barrierAndStop()
+    void Timer::BarrierAndStop()
     {
-        if (d_is_active)
-            SAMRAI_MPI::getSAMRAIWorld().Barrier();
+        if (d_isActive)
+            AriesMPI::GetAriesWorld().Barrier();
         
-        stop();
+        Stop();
     }
 
-    void Timer::reset()
+    void Timer::Reset()
     {
-        d_user_total = 0.0;
-        d_system_total = 0.0;
-        d_wallclock_total = 0.0;
+        d_userTotal = 0.0;
+        d_systemTotal = 0.0;
+        d_wallclockTotal = 0.0;
 
-        d_user_exclusive = 0.0;
-        d_system_exclusive = 0.0;
-        d_wallclock_exclusive = 0.0;
+        d_userExclusive = 0.0;
+        d_systemExclusive = 0.0;
+        d_wallclockExclusive = 0.0;
 
-        d_max_wallclock = 0.0;
+        d_maxWallclock = 0.0;
 
-        d_concurrent_timers.clear();
+        d_concurrentTimers.clear();
     }
 
-    bool Timer::isConcurrentTimer(const Timer& timer) const
+    bool Timer::IsConcurrentTimer(const Timer& timer) const
     {
-        for (std::vector<const Timer *>::const_iterator i = d_concurrent_timers.begin();
-             i != d_concurrent_timers.end();
+        for (std::vector<const Timer *>::const_iterator i = d_concurrentTimers.begin();
+             i != d_concurrentTimers.end();
              ++i)
         {
             if (*i == &timer)
@@ -185,47 +181,36 @@ namespace AREIS
         return false;
     }
 
-    /*
-     * Compute the load balance efficiency based the wallclock time on each
-     * processor, using the formula:
-     *
-     *      eff = (sum(time summed across processors)/#processors) /
-     *             max(time across all processors)
-     *
-     * This formula corresponds to that used to compute load balance
-     * efficiency based on the processor distribution of the the number of
-     * cells (i.e. in BalanceUtilities::computeLoadBalanceEfficiency).
-     */
-    double Timer::computeLoadBalanceEfficiency()
+    double Timer::ComputeLoadBalanceEfficiency()
     {
-        const SAMRAI_MPI& mpi(SAMRAI_MPI::getSAMRAIWorld());
-        double wall_time = d_wallclock_total;
+        const AriesMPI& mpi(AriesMPI::GetAriesWorld());
+        double wall_time = d_wallclockTotal;
         double sum = wall_time;
-        if (mpi.getSize() > 1)
+        if (mpi.GetSize() > 1)
         {
             mpi.Allreduce(&wall_time, &sum, 1, MPI_DOUBLE, MPI_SUM);
         }
-        computeMaxWallclock();
-        int nprocs = mpi.getSize();
+        ComputeMaxWallclock();
+        int nprocs = mpi.GetSize();
         double eff = 100.;
-        if (d_max_wallclock > 0.)
+        if (d_maxWallclock > 0.)
         {
-            eff = 100. * (sum / (double)nprocs) / d_max_wallclock;
+            eff = 100. * (sum / (double)nprocs) / d_maxWallclock;
         }
         return eff;
     }
 
-    void Timer::computeMaxWallclock()
+    void Timer::ComputeMaxWallclock()
     {
-        const SAMRAI_MPI& mpi(SAMRAI_MPI::getSAMRAIWorld());
-        double wall_time = d_wallclock_total;
-        if (mpi.getSize() > 1)
+        const AriesMPI& mpi(AriesMPI::GetAriesWorld());
+        double wall_time = d_wallclockTotal;
+        if (mpi.GetSize() > 1)
         {
-            mpi.Allreduce( &wall_time, &d_max_wallclock, 1, MPI_DOUBLE, MPI_MAX);
+            mpi.Allreduce( &wall_time, &d_maxWallclock, 1, MPI_DOUBLE, MPI_MAX);
         }
     }
 
-    void Timer::putToRestart() const
+    void Timer::PutToRestart() const
     {
         //TBOX_ASSERT(restart_db);
         //
@@ -237,12 +222,12 @@ namespace AREIS
         //restart_db->putDouble("d_system_total", d_system_total);
         //restart_db->putDouble("d_wallclock_total", d_wallclock_total);
         //
-        //restart_db->putDouble("d_user_exclusive", d_user_exclusive);
-        //restart_db->putDouble("d_system_exclusive", d_system_exclusive);
-        //restart_db->putDouble("d_wallclock_exclusive", d_wallclock_exclusive);
+        //restart_db->putDouble("d_userExclusive", d_userExclusive);
+        //restart_db->putDouble("d_systemExclusive", d_systemExclusive);
+        //restart_db->putDouble("d_wallclockExclusive", d_wallclockExclusive);
     }
 
-    void Timer::getFromRestart()
+    void Timer::GetFromRestart()
     {
         //TBOX_ASSERT(restart_db);
         //
@@ -257,8 +242,9 @@ namespace AREIS
         //d_system_total = restart_db->getDouble("d_system_total");
         //d_wallclock_total = restart_db->getDouble("d_wallclock_total");
         //
-        //d_user_exclusive = restart_db->getDouble("d_user_exclusive");
-        //d_system_exclusive = restart_db->getDouble("d_system_exclusive");
-        //d_wallclock_exclusive = restart_db->getDouble("d_wallclock_exclusive");
+        //d_userExclusive = restart_db->getDouble("d_userExclusive");
+        //d_systemExclusive = restart_db->getDouble("d_systemExclusive");
+        //d_wallclockExclusive = restart_db->getDouble("d_wallclockExclusive");
     }
-}
+    
+} // end namespace ARIES

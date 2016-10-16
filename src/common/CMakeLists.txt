@@ -10,7 +10,9 @@ set(COMM_SRC
   Logger.cpp
   StartupShutdownManager.cpp
   Utilities.cpp
-  Clock.cpp)
+  Clock.cpp
+  Timer.cpp
+  TimerManager.cpp)
 
 add_library(libcomm ${COMM_SRC})
 set_target_properties(libcomm PROPERTIES OUTPUT_NAME "comm")

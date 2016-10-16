@@ -10,14 +10,14 @@
  *
  *================================================================================
  *    Date            Name                    Description of Change
- *    23-Sep-2016     Jiamin Xu               Creation
+ *    16-Oct-2016     Jiamin Xu               Creation
  *================================================================================
  */
 #ifndef ARIES_TIMER_HPP
 #define ARIES_TIMER_HPP
 
 /* Aries includes */
-#include "SAMRAI/tbox/Clock.h"
+#include "Clock.hpp"
 /* C++ includes */
 #include <string>
 #include <vector>
@@ -39,259 +39,166 @@ namespace ARIES
  */
 namespace ARIES
 {
-    /**
-     * Class Timer holds the exclusive and total start, stop, and elapsed
-     * time for timers instrumented in SAMRAI.  Total time is simply the time
-     * between calls to the start() and stop() functions.  Exclusive time is
-     * applicable if there are nested timers called.
-     *
-     * System and user start and end times are stored as variables of type
-     * clock_t, defined in the sys/times.h include file.  A detailed explanation
-     * of the structures used to store system and user times is given in the
-     * header for the Clock class. This routine simply accesses the functions
-     * specified in that class.
-     *
-     * Wallclock time may be computed by the systems internal clocks which require
-     * an object of type clock_t, or by SAMRAI_MPI::Wtime() if the code is linked
-     * to MPI libraries.
-     *
-     * In addition to running or not running, a timer may be active or inactive.
-     * An inactive timer is one that is created within a program but will never
-     * be turned on or off because it is either not specified as active in
-     * an input file or it was not explicitly made active by the user.  When
-     * a timer is created, it is active by default.
-     *
-     * Note that the constructor is protected so that timer objects can only
-     * be created by the TimerManager class.
-     *
-     * @see TimerManager
+    /*!
+     *  Class Timer holds the exclusive and total start, stop, and elapsed
+     *  time for timers instrumented in Aries.  Total time is simply the time
+     *  between calls to the start() and stop() functions.  Exclusive time is
+     *  applicable if there are nested timers called.
+     *  
+     *  System and user start and end times are stored as variables of type
+     *  clock_t, defined in the sys/times.h include file.  A detailed explanation
+     *  of the structures used to store system and user times is given in the
+     *  header for the Clock class. This routine simply accesses the functions
+     *  specified in that class.
+     *  
+     *  Wallclock time may be computed by the systems internal clocks which require
+     *  an object of type clock_t, or by Aries_MPI::Wtime() if the code is linked
+     *  to MPI libraries.
+     *  
+     *  In addition to running or not running, a timer may be active or inactive.
+     *  An inactive timer is one that is created within a program but will never
+     *  be turned on or off because it is either not specified as active in
+     *  an input file or it was not explicitly made active by the user.  When
+     *  a timer is created, it is active by default.
+     *  
+     *  Note that the constructor is protected so that timer objects can only
+     *  be created by the TimerManager class.
+     *  
+     *  @see TimerManager
      */
     class Timer
     {
         friend class TimerManager;
     public:
-        /**
-         * Empty destructor for Timer class.
-         */
-        ~Timer();
+        ~Timer();                                                        /**< @brief Empty destructor for Timer class. */
+        const std::string& GetName() const { return d_name; }            /**< @brief Return string name for timer. */
 
-        /**
-         * Return string name for timer.
-         */
-        const std::string& getName() const
-        {
-            return d_name;
-        }
+        void Start();
+        void Stop();
 
-        void start();
-        void stop();
+        void BarrierAndStart();  /**< @brief If active, Aries_MPI::getAriesWorld().Barrier() then start the timer. */
+        void BarrierAndStop();   /**< @brief If active, Aries_MPI::getAriesWorld().Barrier() then stop the timer. */
 
-        //If active, SAMRAI_MPI::getSAMRAIWorld().Barrier() then start the timer.
-        void barrierAndStart();
+        void StartExclusive();   /**< @brief Start exclusive time.. */
+        void StopExclusive();    /**< @brief Stop exclusive time. */
 
-        // If active, SAMRAI_MPI::getSAMRAIWorld().Barrier() then stop the timer.
-        void barrierAndStop();
+        void Reset();            /**< @brief Reset the state of the timing information. */
 
-        /**
-         * Start exclusive time.
-         */
-        void startExclusive();
+        //@{
+        //! @name Return total system time (between starts and stops)
+        double GetTotalSystemTime() const { return d_systemTotal / Clock::GetClockCycle(); }
+        double GetTotalUserTime() const { return d_userTotal / Clock::GetClockCycle(); }
+        double GetTotalWallclockTime() const { return d_wallclockTotal; }
+        //@}
 
-        /**
-         * Stop exclusive time.
-         */
-        void stopExclusive();
-
-        /**
-         * Reset the state of the timing information.
-         */
-        void reset();
-
-        /**
-         * Return total system time (between starts and stops)
-         */
-        double getTotalSystemTime() const
-        {
-            return d_system_total / Clock::getClockCycle();
-        }
-
-
-        double getTotalUserTime() const
-        {
-            return d_user_total / Clock::getClockCycle();
-        }
-
-        double getTotalWallclockTime() const
-        {
-            return d_wallclock_total;
-        }
-
-        double getMaxWallclockTime() const
-        {
-            return d_max_wallclock;
-        }
-
-        double getExclusiveSystemTime() const
-        {
-            return d_system_exclusive / Clock::getClockCycle();
-        }
-
-        /**
-         * Return exclusive user time.
-         */
-        double getExclusiveUserTime() const
-        {
-            return d_user_exclusive / Clock::getClockCycle();
-        }
+        double GetMaxWallclockTime() const { return d_maxWallclock; }
         
-        double getExclusiveWallclockTime() const
-        {
-            return d_wallclock_exclusive;
-        }
+        //@{
+        //! @name Return exclusive system time (between starts and stops)
+        double GetExclusiveSystemTime() const { return d_systemExclusive / Clock::GetClockCycle(); }
+        double GetExclusiveUserTime() const { return d_userExclusive / Clock::GetClockCycle(); }
+        double GetExclusiveWallclockTime() const { return d_wallclockExclusive; }
+        //@}
 
-        bool isActive() const
-        {
-            return d_is_active;
-        }
+        bool IsActive() const { return d_isActive; }           /**< @brief Acessor for d_isActive. */
+        bool IsRunning() const { return d_isRunning; }         /**< @brief Acessor for d_isRunning. */
 
-        bool isRunning() const
-        {
-
-            return d_is_running;
-        }
-
-        /**
-         * Return number of accesses to start()-stop() functions for the
-         * timer.
+        /*!
+         *  @brief Return number of accesses to start()-stop() functions for the timer.
          */
-        int getNumberAccesses() const
-        {
-            return d_accesses;
-        }
+        int GetNumberAccesses() const { return d_accesses; }      
 
-        /**
-         * Compute load balance efficiency based on wallclock (non-exclusive)
-         * time.
-         */
-        double computeLoadBalanceEfficiency();
+        /*!
+         *  @brief Compute load balance efficiency based on wallclock (non-exclusive) time.
+         */  
+        double ComputeLoadBalanceEfficiency();
 
-        /**
-         * Compute max wallclock time based on total (non-exclusive) time.
+        /*!
+         *  @brief Compute max wallclock time based on total (non-exclusive) time.
          */
-        void computeMaxWallclock();
+        void ComputeMaxWallclock();
 
-        /**
-         * Write timer data members to restart database.
-         *
-         * @pre restart_db
+        /*!
+         *  @brief Write timer data members to restart database.
          */
-        void putToRestart(const boost::shared_ptr<Database>& restart_db) const;
+        void PutToRestart() const;
 
-        /**
-         * Read restarted times from restart database.
-         *
-         * @pre restart_db
+        /*!
+         *  @brief Read restarted times from restart database.
          */
-        void getFromRestart(const boost::shared_ptr<Database>& restart_db);
+        void GetFromRestart();
 
     protected:
-        /**
-         * The constructor for the Timer class sets timer name string
-         * and integer identifiers, and initializes the timer state.
+        /*!
+         *  @brief The constructor for the Timer class sets timer name string
+         *  and integer identifiers, and initializes the timer state.
          */
         explicit Timer(const std::string& name);
 
-        /*
-         * Set this timer object to be a active or inactive.
+        /*!
+         *  @brief Set this timer object to be a active or inactive.
          */
-        void setActive(bool is_active)
-        {
-            d_is_active = is_active;
-        }
+        void SetActive(bool is_active) {  d_isActive = is_active; }
 
-        /**
-         * Add Timer that running concurrently with this one.
+        /*!
+         *  @brief Add Timer that running concurrently with this one.
          */
-        void addConcurrentTimer(const Timer& timer)
+        void AddConcurrentTimer(const Timer& timer)
         {
-            if (!isConcurrentTimer(timer))
+            if (!IsConcurrentTimer(timer))
             {
-                d_concurrent_timers.push_back(&timer);
+                d_concurrentTimers.push_back(&timer);
             }
         }
 
-        bool isConcurrentTimer(const Timer& timer) const;
+        bool IsConcurrentTimer(const Timer& timer) const;
 
     private:
-        // Unimplemented default constructor.
-        Timer();
+        Timer();                               /**< @brief Unimplemented default constructor. */
+        Timer(const Timer& other);             /**< @brief Unimplemented copy constructor. */
+        Timer& operator = (const Timer& rhs);  /**< @brief Unimplemented assignment operator. */
 
-        // Unimplemented copy constructor.
-        Timer(const Timer& other);
+        std::string d_name;                                /**< @brief Timer name. */
+        std::vector<const Timer *> d_concurrentTimers;     /**< @brief Concurrent timer flag. */
 
-        // Unimplemented assignment operator.
-        Timer& operator = (const Timer& rhs);
+        bool d_isRunning;
+        bool d_isActive;
 
-        /*
-         * Class name, id, and concurrent timer flag.
-         */
-        std::string d_name;
-        std::vector<const Timer *> d_concurrent_timers;
+        double d_userTotal;           /**< @brief Total times. */
+        double d_systemTotal;         /**< @brief Total times. */
+        double d_wallclockTotal;      /**< @brief Total times. */
 
-        bool d_is_running;
-        bool d_is_active;
+        double d_userExclusive;           /**< @brief Exclusive times. */
+        double d_systemExclusive;         /**< @brief Exclusive times. */
+        double d_wallclockExclusive;      /**< @brief Exclusive times. */
 
-        /*
-         *  Total times (non-exclusive)
-         */
-        double d_user_total;
-        double d_system_total;
-        double d_wallclock_total;
+        double d_maxWallclock;     /**< @brief Cross processor times. */
 
-        /*
-         *  Exclusive times
-         */
-        double d_user_exclusive;
-        double d_system_exclusive;
-        double d_wallclock_exclusive;
+        //@{
+        //! @name Timestamps.
+        clock_t d_userStartTotal ;
+        clock_t d_userStopTotal;
+        clock_t d_userStartExclusive;
+        clock_t d_userStopExclusive;
+        
+        clock_t d_systemStartTotal;
+        clock_t d_systemStopTotal;
+        clock_t d_systemStartExclusive;
+        clock_t d_systemStopExclusive;
+        
+        double d_wallclockStartTotal;
+        double d_wallclockStopTotal;
+        double d_wallclockStartExclusive;
+        double d_wallclockStopExclusive;
+        //@}
 
-        /*
-         *  Cross processor times (i.e. determined across processors)
-         */
-        double d_max_wallclock;
-
-        /*
-         *  Timestamps.  User and system times are stored as type clock_t.
-         *  Wallclock time is also stored as clock_t unless the library has
-         * been compiled with MPI.  In this case, the wall time is stored
-         * as type double.
-         */
-        clock_t d_user_start_total;
-        clock_t d_user_stop_total;
-        clock_t d_system_start_total;
-        clock_t d_system_stop_total;
-        clock_t d_user_start_exclusive;
-        clock_t d_user_stop_exclusive;
-        clock_t d_system_start_exclusive;
-        clock_t d_system_stop_exclusive;
-        double d_wallclock_start_total;
-        double d_wallclock_stop_total;
-        double d_wallclock_start_exclusive;
-        double d_wallclock_stop_exclusive;
-
-        /*
-         * Counter of number of times timers start/stop
-         * are accessed.
-         */
-        int d_accesses;
+        int d_accesses;  /**< @brief Counter of number of times timers start/stop are accessed. */
 
         static const int DEFAULT_NUMBER_OF_TIMERS_INCREMENT;
-        
-        /*
-         * Static integer constant describing this class's version number.
-         */
         static const int ARIES_TIMER_VERSION;
+        
     }; // end class Timer
 } // end namespace ARIES
 
 #endif
+

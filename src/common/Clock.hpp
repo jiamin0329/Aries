@@ -27,23 +27,26 @@ namespace ARIES
 {
     class Clock
     {
-        /**
-         * Initialize system clock.  Argument must be in the "clock_t" format
-         * which is a standard POSIX struct provided on most systems in the
-         * <sys/times.h> include file. On Microsoft systems, it is provided in
-         * <time.h>.
+    public:
+        /*!
+         *  @brief Initialize system clock.
+         *
+         *  Argument must be in the "clock_t" format which is a standard POSIX struct
+         *  provided on most systems in the <sys/times.h> include file.
+         *  On Microsoft systems, it is provided in <time.h>.
          */
         static void Initialize(clock_t& clock) { clock = times(&d_tmsBuffer); }
 
-        /**
-         * Initialize system clock, where clock is in double format.
+        /*!
+         *  @brief Initialize system clock, where clock is in double format.
          */
         static void Initialize(double& clock) { clock = 0.0; }
 
-        /**
-         * Timestamp user, system, and walltime clocks.  Wallclock argument is in
-         * double format since it will access wallclock times from
-         * SAMRAI_MPI::Wtime() function.
+        /*!
+         *  @brief Timestamp user, system, and walltime clocks.
+         *
+         *  Wallclock argument is in double format since it will access
+         *  wallclock times from AriesMPI::Wtime() function.
          */
         static void Timestamp(clock_t& user, clock_t& sys, double& wall)
         {
@@ -53,8 +56,8 @@ namespace ARIES
             user = d_tmsBuffer.tms_utime;
         }
 
-        /**
-         * Returns clock cycle for the system.
+        /*!
+         *  @brief Returns clock cycle for the system.
          */
         static double GetClockCycle()
         {

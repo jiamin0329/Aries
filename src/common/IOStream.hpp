@@ -6,21 +6,23 @@
  *
  *================================================================================
  *    File description:
- *    Accesses system times.
+ *    Wrapper header file for standard IO stream classes
  *
  *================================================================================
  *    Date            Name                    Description of Change
- *    23-Sep-2016     Jiamin Xu               Creation
+ *    16-Oct-2016     Jiamin Xu               Creation
  *================================================================================
  */
+#ifndef ARIES_IOSTREAM_HPP
+#define ARIES_IOSTREAM_HPP
 
-#include "Clock.hpp"
-/* c++ includes */
-#include <cstdlib>
+#include <cstdio>
 
-namespace ARIES
-{
-    struct tms Clock::d_tmsBuffer;
-    clock_t Clock::d_nullClock_t;
-}
+#include <iostream>
+#include <iomanip>
+
+#include <sstream>
+#include <strstream>
+
+#endif
 
