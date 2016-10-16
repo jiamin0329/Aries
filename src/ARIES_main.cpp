@@ -21,6 +21,7 @@
 #include "AriesMPI.hpp"
 #include "AriesManager.hpp"
 #include "Logger.hpp"
+#include "TimerManager.hpp"
 /* C++ includes */
 #include <string>
 
@@ -32,29 +33,30 @@ int main(int argc, char *argv[])
     ARIES::AriesManager::Startup();
     
     ARIES::Logger::GetInstance()->Startup(true,true,"./hello.log");
+    ARIES::TimerManager::GetInstance()->Print(std::cout);
 
-    unsigned short nZone, nDim;
-    bool isFsi;
-    char configFileName[MAX_STRING_SIZE];
-    
-    /*
-     *  Load in the number of zones and spatial dimensions in the mesh
-     *  file (If no config file is specified, defau lt.cfg is used)
-     */
-    if (argc == 2)
-        strcpy(configFileName, argv[1]);
-    else
-        strcpy(configFileName, "default.cfg");
-
-    /*
-     *  Read the name and format of the input mesh file to get from the mesh
-     *  file the number of zones and dimensions from the numerical grid (required
-     *  for variables allocation)
-     */
-    ARIES::IProcData* procData = new ARIES::ProcData();
-    nDim  = procData->GetNumDim();
-    nZone = procData->GetNumZone();
-    isFsi = procData->IsFsiSimulation();
+    //unsigned short nZone, nDim;
+    //bool isFsi;
+    //char configFileName[MAX_STRING_SIZE];
+    //
+    ///*
+    // *  Load in the number of zones and spatial dimensions in the mesh
+    // *  file (If no config file is specified, defau lt.cfg is used)
+    // */
+    //if (argc == 2)
+    //    strcpy(configFileName, argv[1]);
+    //else
+    //    strcpy(configFileName, "default.cfg");
+    //
+    ///*
+    // *  Read the name and format of the input mesh file to get from the mesh
+    // *  file the number of zones and dimensions from the numerical grid (required
+    // *  for variables allocation)
+    // */
+    //ARIES::IProcData* procData = new ARIES::ProcData();
+    //nDim  = procData->GetNumDim();
+    //nZone = procData->GetNumZone();
+    //isFsi = procData->IsFsiSimulation();
 
 
 

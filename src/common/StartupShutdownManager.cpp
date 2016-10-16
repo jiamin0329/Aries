@@ -111,14 +111,7 @@ namespace ARIES
     void StartupShutdownManager::RegisterHandler(IHandler* handler)
     {
         ARIES_ASSERT(handler);
-
-        // Don't allow registering handlers when we are looping and the
-        // handler needs to be called in that loop.  This would create the
-        // possibility that a handler is registered that needs to get
-        // called.
-        //
-        // SGS Ideally this would not be needed and maybe with some
-        // additional work this could be made more clean.
+        
         ARIES_ASSERT(!(d_inInitialize && handler->HasInitialize()));
         ARIES_ASSERT(!(d_inStartup && handler->HasStartup()));
         ARIES_ASSERT(!(d_inShutdown && handler->HasShutdown()));

@@ -219,7 +219,7 @@ namespace ARIES
          *  
          *  @param handler
          */
-        static void RegisterHandler(IHandler * handler);
+        static void RegisterHandler(IHandler* handler);
 
         /*!
          *  @brief Invoke the registered initialization handlers.

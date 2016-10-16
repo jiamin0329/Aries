@@ -2275,7 +2275,8 @@ namespace ARIES
          * uninstrumented parts of the library.  Hence, use a different name
          * for the different cases to avoid confusion in the Tau analysis tool.
          */
-        //d_mainTimer->Reset(new Timer("TOTAL RUN TIME"));
+        if (d_mainTimer != NULL)
+            delete d_mainTimer;
         d_mainTimer = new Timer("TOTAL RUN TIME");
 
         d_timers.clear();
