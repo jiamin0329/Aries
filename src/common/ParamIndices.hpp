@@ -90,6 +90,26 @@ typedef enum
 
 #define PARAM_paramindices_end                99999
 
+
+
+
+namespace 
+{
+    typedef void (*ParamIndexInsertCallback)(int paramIndex);
+    
+    struct ParamIndexTable
+    {
+        int ParamIndex;
+        void *ParamIndexInsertCallback;
+    };
+
+    struct DefaultValueBool
+    {
+        int ParamIndex;
+        bool defValue;
+    };
+}
+
 #endif
 
 

@@ -12,7 +12,8 @@ set(COMM_SRC
   Utilities.cpp
   Clock.cpp
   Timer.cpp
-  TimerManager.cpp)
+  TimerManager.cpp
+  ParamIndices.cpp)
 
 add_library(libcomm ${COMM_SRC})
 set_target_properties(libcomm PROPERTIES OUTPUT_NAME "comm")
